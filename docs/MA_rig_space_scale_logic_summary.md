@@ -277,26 +277,28 @@ animCurveUL 的输出位移按 2.5 放大
 针对这次 ADV 文件，推荐：
 
 ```cmd
-python scale_ma_rig_space_universal.py input.ma output_2p5.ma 2.5 --preset adv --sdk-mode linear-output --report output_2p5_report.txt
+$env:PYTHONPATH=".\src"; python -m maya_scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --preset adv --sdk-mode linear-output --report .\output_2p5_report.txt
 ```
 
 由于脚本默认就是 ADV profile，也可以简写为：
 
 ```cmd
-python scale_ma_rig_space_universal.py input.ma output_2p5.ma 2.5 --report output_2p5_report.txt
+$env:PYTHONPATH=".\src"; python -m maya_scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --report .\output_2p5_report.txt
 ```
 
 更保守的通用 rig 模式：
 
 ```cmd
-python scale_ma_rig_space_universal.py input.ma output_2p5.ma 2.5 --preset generic --sdk-mode none --report output_2p5_report.txt
+$env:PYTHONPATH=".\src"; python -m maya_scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --preset generic --sdk-mode none --report .\output_2p5_report.txt
 ```
 
 如果文件里已有 translate 动画 key，并且希望位移动画也适配新尺寸：
 
 ```cmd
-python scale_ma_rig_space_universal.py input.ma output_2p5.ma 2.5 --preset adv --sdk-mode linear-output --scale-linear-animation --report output_2p5_report.txt
+$env:PYTHONPATH=".\src"; python -m maya_scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --preset adv --sdk-mode linear-output --scale-linear-animation --report .\output_2p5_report.txt
 ```
+
+安装为本地命令后，也可以把上面的 `python -m maya_scalerig` 换成 `maya-scalerig`。
 
 ---
 

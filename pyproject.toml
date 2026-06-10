@@ -23,8 +23,7 @@ classifiers = [
 ui = ["PyQt6>=6.6"]
 
 [project.scripts]
-maya-scalerig = "maya_scalerig.core.scale_ma_rig_space_universal:main"
+maya-scalerig = "maya_scalerig.core.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
