@@ -28,3 +28,6 @@ maya-scalerig-ui = "maya_scalerig.ui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+maya_scalerig = ["ui/assets/*.svg"]

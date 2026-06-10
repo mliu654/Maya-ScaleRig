@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('Maya ScaleRig')
         self.resize(1120, 760)
-        self.setMinimumSize(900, 620)
+        self.setMinimumSize(940, 760)
 
         self.worker: Optional[ScaleWorker] = None
         self.thread: Optional[QThread] = None
@@ -133,14 +133,30 @@ class MainWindow(QMainWindow):
 
     def _build_options_group(self) -> QGroupBox:
         self.options_group = QGroupBox()
-        layout = QGridLayout(self.options_group)
+        self.options_group.setMinimumHeight(246)
+        layout = QVBoxLayout(self.options_group)
+        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setSpacing(10)
+
+        self.option_controls_panel = QFrame()
+        self.option_controls_panel.setObjectName('optionControlsPanel')
+        self.option_controls_panel.setMinimumHeight(96)
+        controls_layout = QGridLayout(self.option_controls_panel)
+        controls_layout.setContentsMargins(10, 10, 10, 10)
+        controls_layout.setHorizontalSpacing(10)
+        controls_layout.setVerticalSpacing(10)
+        controls_layout.setRowMinimumHeight(0, 36)
+        controls_layout.setRowMinimumHeight(1, 36)
+        controls_layout.setColumnStretch(1, 1)
+        controls_layout.setColumnStretch(3, 1)
+        controls_layout.setColumnStretch(5, 1)
 
         self.language_label = QLabel()
         self.language_combo = QComboBox()
         for language_code, language_name in LANGUAGE_NAMES.items():
             self.language_combo.addItem(language_name, language_code)
         self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
-        self.language_combo.setMinimumHeight(34)
+        self.language_combo.setFixedHeight(36)
         self.language_combo.setMinimumWidth(130)
 
         self.scale_spin = QDoubleSpinBox()
@@ -148,29 +164,29 @@ class MainWindow(QMainWindow):
         self.scale_spin.setDecimals(4)
         self.scale_spin.setValue(2.5)
         self.scale_spin.setSingleStep(0.1)
-        self.scale_spin.setMinimumHeight(34)
+        self.scale_spin.setFixedHeight(36)
         self.scale_spin.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.scale_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.scale_spin.setSuffix(' x')
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(['adv', 'generic'])
-        self.preset_combo.setMinimumHeight(34)
+        self.preset_combo.setFixedHeight(36)
         self.preset_combo.setMinimumWidth(130)
 
         self.sdk_combo = QComboBox()
         self.sdk_combo.addItems(['auto', 'none', 'linear-output'])
-        self.sdk_combo.setMinimumHeight(34)
+        self.sdk_combo.setFixedHeight(36)
         self.sdk_combo.setMinimumWidth(150)
 
         self.rest_combo = QComboBox()
         self.rest_combo.addItems(['auto', 'off', 'on'])
-        self.rest_combo.setMinimumHeight(34)
+        self.rest_combo.setFixedHeight(36)
         self.rest_combo.setMinimumWidth(130)
 
         self.rest_vector_combo = QComboBox()
         self.rest_vector_combo.addItems(['first', 'all'])
-        self.rest_vector_combo.setMinimumHeight(34)
+        self.rest_vector_combo.setFixedHeight(36)
         self.rest_vector_combo.setMinimumWidth(130)
 
         self.scale_translate_limits_check = QCheckBox()
@@ -185,36 +201,43 @@ class MainWindow(QMainWindow):
         self.rest_vector_label = QLabel()
         self.toggle_panel = QFrame()
         self.toggle_panel.setObjectName('optionTogglePanel')
-        toggle_layout = QHBoxLayout(self.toggle_panel)
-        toggle_layout.setContentsMargins(10, 8, 10, 8)
-        toggle_layout.setSpacing(18)
-        toggle_layout.addWidget(self.scale_translate_limits_check)
-        toggle_layout.addWidget(self.scale_linear_animation_check)
-        toggle_layout.addWidget(self.dry_run_check)
-        toggle_layout.addWidget(self.write_report_check)
-        toggle_layout.addStretch(1)
+        self.toggle_panel.setMinimumHeight(88)
+        toggle_layout = QGridLayout(self.toggle_panel)
+        toggle_layout.setContentsMargins(12, 10, 12, 10)
+        toggle_layout.setHorizontalSpacing(22)
+        toggle_layout.setVerticalSpacing(8)
+        toggle_layout.setRowMinimumHeight(0, 30)
+        toggle_layout.setRowMinimumHeight(1, 30)
+        for checkbox in (
+            self.scale_translate_limits_check,
+            self.scale_linear_animation_check,
+            self.dry_run_check,
+            self.write_report_check,
+        ):
+            checkbox.setMinimumHeight(28)
+        toggle_layout.addWidget(self.scale_translate_limits_check, 0, 0)
+        toggle_layout.addWidget(self.scale_linear_animation_check, 0, 1)
+        toggle_layout.addWidget(self.dry_run_check, 1, 0)
+        toggle_layout.addWidget(self.write_report_check, 1, 1)
+        toggle_layout.setColumnStretch(0, 1)
+        toggle_layout.setColumnStretch(1, 1)
 
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(10)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(3, 1)
-        layout.setColumnStretch(5, 1)
+        controls_layout.addWidget(self.language_label, 0, 0)
+        controls_layout.addWidget(self.language_combo, 0, 1)
+        controls_layout.addWidget(self.scale_label, 0, 2)
+        controls_layout.addWidget(self.scale_spin, 0, 3)
+        controls_layout.addWidget(self.preset_label, 0, 4)
+        controls_layout.addWidget(self.preset_combo, 0, 5)
 
-        layout.addWidget(self.language_label, 0, 0)
-        layout.addWidget(self.language_combo, 0, 1)
+        controls_layout.addWidget(self.sdk_mode_label, 1, 0)
+        controls_layout.addWidget(self.sdk_combo, 1, 1)
+        controls_layout.addWidget(self.rest_mode_label, 1, 2)
+        controls_layout.addWidget(self.rest_combo, 1, 3)
+        controls_layout.addWidget(self.rest_vector_label, 1, 4)
+        controls_layout.addWidget(self.rest_vector_combo, 1, 5)
 
-        layout.addWidget(self.scale_label, 1, 0)
-        layout.addWidget(self.scale_spin, 1, 1)
-        layout.addWidget(self.preset_label, 1, 2)
-        layout.addWidget(self.preset_combo, 1, 3)
-        layout.addWidget(self.sdk_mode_label, 1, 4)
-        layout.addWidget(self.sdk_combo, 1, 5)
-
-        layout.addWidget(self.rest_mode_label, 2, 0)
-        layout.addWidget(self.rest_combo, 2, 1)
-        layout.addWidget(self.rest_vector_label, 2, 2)
-        layout.addWidget(self.rest_vector_combo, 2, 3)
-        layout.addWidget(self.toggle_panel, 3, 0, 1, 6)
+        layout.addWidget(self.option_controls_panel)
+        layout.addWidget(self.toggle_panel)
 
         return self.options_group
 
@@ -231,7 +254,7 @@ class MainWindow(QMainWindow):
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setMinimumHeight(170)
+        self.table.setMinimumHeight(110)
         return self.table
 
     def _build_run_group(self) -> QWidget:
@@ -264,7 +287,7 @@ class MainWindow(QMainWindow):
         self.log = QTextEdit()
         self.log.setObjectName('logView')
         self.log.setReadOnly(True)
-        self.log.setMinimumHeight(210)
+        self.log.setMinimumHeight(96)
         self.log.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout.addLayout(button_row)

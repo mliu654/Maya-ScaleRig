@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+
+CHEVRON_DOWN = (Path(__file__).resolve().parent / 'assets' / 'chevron_down.svg').as_posix()
+CHECK_ICON = (Path(__file__).resolve().parent / 'assets' / 'check.svg').as_posix()
 
 APP_STYLE = """
 QWidget {
@@ -21,7 +26,7 @@ QGroupBox {
     border-radius: 8px;
     font-weight: 600;
     margin-top: 12px;
-    padding: 14px 12px 12px 12px;
+    padding: 8px;
 }
 
 QGroupBox::title {
@@ -36,6 +41,10 @@ QLabel {
     background: transparent;
 }
 
+QGroupBox QLabel {
+    font-weight: 500;
+}
+
 QLineEdit,
 QComboBox,
 QDoubleSpinBox,
@@ -48,17 +57,20 @@ QTextEdit {
 }
 
 QComboBox {
-    padding: 6px 34px 6px 10px;
+    padding: 4px 34px 4px 10px;
+    min-height: 26px;
 }
 
 QComboBox::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;
-    width: 30px;
+    width: 32px;
+    top: 1px;
+    bottom: 1px;
     border-left: 1px solid #e1e7ef;
     border-top-right-radius: 6px;
     border-bottom-right-radius: 6px;
-    background: #f8fafc;
+    background: #f7fafc;
 }
 
 QComboBox::drop-down:hover {
@@ -66,13 +78,10 @@ QComboBox::drop-down:hover {
 }
 
 QComboBox::down-arrow {
-    image: none;
-    width: 0;
-    height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #587086;
-    margin-right: 10px;
+    image: url("__CHEVRON_DOWN__");
+    width: 12px;
+    height: 12px;
+    margin-right: 9px;
 }
 
 QComboBox QAbstractItemView {
@@ -86,9 +95,11 @@ QComboBox QAbstractItemView {
 }
 
 QDoubleSpinBox {
-    padding: 6px 12px;
+    padding: 4px 12px;
+    min-height: 26px;
     font-weight: 600;
     color: #1f3a4d;
+    background: #fbfdff;
 }
 
 QLineEdit:focus,
@@ -157,13 +168,14 @@ QPushButton#dangerButton:hover {
 QCheckBox {
     background: transparent;
     color: #304050;
-    spacing: 7px;
+    spacing: 8px;
+    font-weight: 500;
 }
 
 QCheckBox::indicator {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
     border: 1px solid #b7c2d0;
     background: #ffffff;
 }
@@ -171,11 +183,18 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background: #247a9b;
     border-color: #247a9b;
+    image: url("__CHECK_ICON__");
+}
+
+QFrame#optionControlsPanel {
+    background: #fbfcfe;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
 }
 
 QFrame#optionTogglePanel {
-    background: #f8fafc;
-    border: 1px solid #e0e6ee;
+    background: #f4f8fb;
+    border: 1px solid #dce7ef;
     border-radius: 8px;
 }
 
@@ -223,4 +242,4 @@ QTextEdit#logView {
     font-family: "Consolas", "Cascadia Mono", monospace;
     font-size: 9.5pt;
 }
-"""
+""".replace('__CHEVRON_DOWN__', CHEVRON_DOWN).replace('__CHECK_ICON__', CHECK_ICON)
