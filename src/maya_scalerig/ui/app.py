@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 try:
     from PyQt6.QtCore import Qt, QThread
+    from PyQt6.QtGui import QColor
     from PyQt6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -30,6 +31,7 @@ try:
         QVBoxLayout,
         QWidget,
         QDoubleSpinBox,
+        QSizePolicy,
     )
 except ImportError as exc:  # pragma: no cover - depends on optional UI extra
     raise SystemExit(
@@ -38,6 +40,7 @@ except ImportError as exc:  # pragma: no cover - depends on optional UI extra
 
 from maya_scalerig.core.constants import DEFAULT_REST_NODE_REGEX, DEFAULT_SDK_LINEAR_NODE_REGEX
 from maya_scalerig.ui.i18n import DEFAULT_LANGUAGE, LANGUAGE_NAMES, translate
+from maya_scalerig.ui.style import APP_STYLE
 from maya_scalerig.ui.worker import ScaleWorker, default_output_name
 
 
@@ -45,12 +48,20 @@ INPUT_COL = 0
 OUTPUT_COL = 1
 STATUS_COL = 2
 
+STATUS_COLORS = {
+    'pending': ('#536171', '#f1f4f8'),
+    'running': ('#1f6f8d', '#e6f3f8'),
+    'done': ('#246b50', '#e8f5ef'),
+    'error': ('#a33c3c', '#fff0f0'),
+}
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle('Maya ScaleRig')
-        self.resize(980, 720)
+        self.resize(1120, 760)
+        self.setMinimumSize(900, 620)
 
         self.worker: Optional[ScaleWorker] = None
         self.thread: Optional[QThread] = None
@@ -58,13 +69,16 @@ class MainWindow(QMainWindow):
         self.language = DEFAULT_LANGUAGE
 
         root = QWidget()
+        root.setObjectName('rootWidget')
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(18, 16, 18, 18)
+        layout.setSpacing(12)
 
         layout.addWidget(self._build_file_group())
         layout.addWidget(self._build_options_group())
-        layout.addWidget(self._build_table())
-        layout.addWidget(self._build_run_group())
+        layout.addWidget(self._build_table(), 2)
+        layout.addWidget(self._build_run_group(), 3)
 
         self._connect_signals()
         self.apply_language()
@@ -74,17 +88,27 @@ class MainWindow(QMainWindow):
         layout = QGridLayout(self.files_group)
 
         self.input_edit = QLineEdit()
+        self.input_edit.setMinimumHeight(34)
         self.browse_input_btn = QPushButton()
         self.add_input_btn = QPushButton()
         self.add_multiple_btn = QPushButton()
 
         self.output_dir_edit = QLineEdit()
+        self.output_dir_edit.setMinimumHeight(34)
         self.browse_output_btn = QPushButton()
 
         self.selected_output_name_edit = QLineEdit()
+        self.selected_output_name_edit.setMinimumHeight(34)
         self.input_label = QLabel()
         self.output_dir_label = QLabel()
         self.selected_output_name_label = QLabel()
+        self.input_label.setMinimumWidth(118)
+        self.output_dir_label.setMinimumWidth(118)
+        self.selected_output_name_label.setMinimumWidth(118)
+
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+        layout.setColumnStretch(1, 1)
 
         layout.addWidget(self.input_label, 0, 0)
         layout.addWidget(self.input_edit, 0, 1)
@@ -110,24 +134,30 @@ class MainWindow(QMainWindow):
         for language_code, language_name in LANGUAGE_NAMES.items():
             self.language_combo.addItem(language_name, language_code)
         self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
+        self.language_combo.setMinimumHeight(34)
 
         self.scale_spin = QDoubleSpinBox()
         self.scale_spin.setRange(0.0001, 1000000.0)
         self.scale_spin.setDecimals(4)
         self.scale_spin.setValue(2.5)
         self.scale_spin.setSingleStep(0.1)
+        self.scale_spin.setMinimumHeight(34)
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(['adv', 'generic'])
+        self.preset_combo.setMinimumHeight(34)
 
         self.sdk_combo = QComboBox()
         self.sdk_combo.addItems(['auto', 'none', 'linear-output'])
+        self.sdk_combo.setMinimumHeight(34)
 
         self.rest_combo = QComboBox()
         self.rest_combo.addItems(['auto', 'off', 'on'])
+        self.rest_combo.setMinimumHeight(34)
 
         self.rest_vector_combo = QComboBox()
         self.rest_vector_combo.addItems(['first', 'all'])
+        self.rest_vector_combo.setMinimumHeight(34)
 
         self.scale_translate_limits_check = QCheckBox()
         self.scale_linear_animation_check = QCheckBox()
@@ -139,6 +169,12 @@ class MainWindow(QMainWindow):
         self.sdk_mode_label = QLabel()
         self.rest_mode_label = QLabel()
         self.rest_vector_label = QLabel()
+
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(10)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(5, 1)
 
         layout.addWidget(self.language_label, 0, 0)
         layout.addWidget(self.language_combo, 0, 1)
@@ -166,22 +202,33 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(['Input file', 'Output name', 'Status'])
         self.table.horizontalHeader().setSectionResizeMode(INPUT_COL, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(OUTPUT_COL, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(OUTPUT_COL, QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setSectionResizeMode(STATUS_COL, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setColumnWidth(OUTPUT_COL, 260)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(34)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setMinimumHeight(170)
         return self.table
 
     def _build_run_group(self) -> QWidget:
         box = QWidget()
         layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
         button_row = QHBoxLayout()
+        button_row.setSpacing(8)
         self.refresh_names_btn = QPushButton()
         self.remove_selected_btn = QPushButton()
         self.clear_btn = QPushButton()
         self.run_btn = QPushButton()
         self.cancel_btn = QPushButton()
+        self.run_btn.setObjectName('primaryButton')
+        self.cancel_btn.setObjectName('dangerButton')
         self.cancel_btn.setEnabled(False)
         button_row.addWidget(self.refresh_names_btn)
         button_row.addWidget(self.remove_selected_btn)
@@ -192,9 +239,13 @@ class MainWindow(QMainWindow):
 
         self.progress = QProgressBar()
         self.progress.setValue(0)
+        self.progress.setTextVisible(True)
 
         self.log = QTextEdit()
+        self.log.setObjectName('logView')
         self.log.setReadOnly(True)
+        self.log.setMinimumHeight(210)
+        self.log.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         layout.addLayout(button_row)
         layout.addWidget(self.progress)
@@ -286,6 +337,7 @@ class MainWindow(QMainWindow):
                 done_match = re.match(r'^(?:Done|完成) \((\d+)\)$', current)
                 if done_match:
                     item.setText(self.tr('status_done', total=done_match.group(1)))
+            self.apply_status_style(item)
 
     def browse_single_input(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -334,6 +386,7 @@ class MainWindow(QMainWindow):
 
                 status_item = QTableWidgetItem(self.tr('status_pending'))
                 status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.apply_status_style(status_item)
 
                 self.table.setItem(row, INPUT_COL, input_item)
                 self.table.setItem(row, OUTPUT_COL, output_item)
@@ -476,6 +529,22 @@ class MainWindow(QMainWindow):
         item = self.table.item(row, STATUS_COL)
         if item:
             item.setText(status)
+            self.apply_status_style(item)
+
+    def apply_status_style(self, item: QTableWidgetItem) -> None:
+        status = item.text()
+        status_key = 'pending'
+        if status in {translate(lang, 'status_running') for lang in LANGUAGE_NAMES}:
+            status_key = 'running'
+        elif status in {translate(lang, 'status_error') for lang in LANGUAGE_NAMES}:
+            status_key = 'error'
+        elif re.match(r'^(?:Done|完成) \(\d+\)$', status):
+            status_key = 'done'
+
+        foreground, background = STATUS_COLORS[status_key]
+        item.setForeground(QColor(foreground))
+        item.setBackground(QColor(background))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def append_log(self, message: str) -> None:
         self.log.append(message)
@@ -489,6 +558,8 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+    app.setStyleSheet(APP_STYLE)
     window = MainWindow()
     window.show()
     return app.exec()
