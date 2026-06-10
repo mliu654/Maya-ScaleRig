@@ -1,2 +1,1 @@
-"""Future PyQt6 user interface package."""
-
+"""PyQt6 user interface package for Maya ScaleRig."""

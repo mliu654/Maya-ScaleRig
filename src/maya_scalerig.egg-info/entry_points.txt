@@ -1,0 +1,3 @@
+[console_scripts]
+maya-scalerig = maya_scalerig.core.cli:main
+maya-scalerig-ui = maya_scalerig.ui.app:main

@@ -24,6 +24,7 @@ ui = ["PyQt6>=6.6"]
 
 [project.scripts]
 maya-scalerig = "maya_scalerig.core.cli:main"
+maya-scalerig-ui = "maya_scalerig.ui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

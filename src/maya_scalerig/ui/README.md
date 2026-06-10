@@ -1,15 +1,30 @@
 # UI Package
 
-This folder is reserved for the future PyQt6 interface.
+This folder contains the optional PyQt6 desktop interface.
 
-Planned responsibilities:
+Current responsibilities:
 
-- File picker for input and output `.ma` paths.
-- Preset selection for AdvancedSkeleton and generic rigs.
-- Advanced options for SDK, rest-length, and custom attribute rules.
-- Dry-run report preview.
-- One-click export of the scaled `.ma` file and report.
+- Add one or more input `.ma` files by typing paths or using file pickers.
+- Edit the scale factor.
+- Choose an output folder by typing a path or selecting a folder.
+- Customize output names per file. The default is `originalName_scale.ma`.
+- Run batch scaling with a per-file progress bar.
+- Show logs and generated core reports in the UI.
+- Optionally write `*_report.txt` files next to the output `.ma` files.
 
-Keep UI code separate from `maya_scalerig.core` so the command-line scaler can
-continue to run without PyQt6 installed.
+Run without installing the package:
 
+```powershell
+$env:PYTHONPATH = ".\src"
+python -m maya_scalerig.ui
+```
+
+Run after editable install:
+
+```powershell
+python -m pip install -e ".[ui]"
+maya-scalerig-ui
+```
+
+The UI imports PyQt6 only from this package. `maya_scalerig.core` and the CLI
+continue to work without PyQt6 installed.

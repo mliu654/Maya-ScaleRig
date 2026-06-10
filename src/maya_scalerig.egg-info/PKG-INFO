@@ -1,3 +1,18 @@
+Metadata-Version: 2.4
+Name: maya-scalerig
+Version: 0.1.0
+Summary: Scale scene-space data inside Maya ASCII rig files without changing controller scale channels.
+Author: Maya ScaleRig contributors
+Keywords: maya,rigging,ma,scaling,advanced-skeleton
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Multimedia :: Graphics :: 3D Modeling
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Provides-Extra: ui
+Requires-Dist: PyQt6>=6.6; extra == "ui"
+
 # Maya ScaleRig
 
 Scale scene-space data inside a Maya ASCII rig file without adding an external
