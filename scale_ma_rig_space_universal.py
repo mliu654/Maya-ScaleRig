@@ -43,6 +43,9 @@ ADD_SN_RE = re.compile(r'-sn\s+"([^"]+)"')
 ADD_LN_RE = re.compile(r'-ln\s+"([^"]+)"')
 DV_RE = re.compile(r'(-dv\s+)(' + NUM_PATTERN + r')')
 SELECT_RE = re.compile(r'^\s*select\b')
+UNQUOTED_SETATTR_ATTR_RE = re.compile(
+    r'^\s*setAttr\b(?:\s+-\S+(?:\s+(?:"[^"]*"|\S+))?)*\s+([^\s;]+)'
+)
 
 # -----------------------------
 # Built-in attr rules
@@ -94,6 +97,13 @@ SPATIAL_ADDATTR_NAMES = {
 DEFAULT_REST_NODE_REGEX = (
     r'(distance|lenght|length|measure|messure|curveinfo.*normalize|normalize.*curveinfo|'
     r'stretchy|stretch)'
+)
+
+# Names matching these words are likely animCurveUL nodes whose output is a linear
+# scene-space value. This keeps generic unitless->linear curves from being scaled
+# just because their Maya type is animCurveUL.
+DEFAULT_SDK_LINEAR_NODE_REGEX = (
+    r'(translate|position|offset|distance|lenght|length|height|width|radius|falloff)'
 )
 
 # Attributes on utility nodes that can store distance constants.
@@ -203,6 +213,25 @@ def find_attr_token(stmt: str) -> Optional[re.Match[str]]:
     return None
 
 
+def find_attr_ref(stmt: str) -> Optional[tuple[int, int, str]]:
+    """Find a setAttr target attr, supporting quoted and simple unquoted forms."""
+    m = find_attr_token(stmt)
+    if m:
+        return m.start(), m.end(), m.group(1)
+
+    # Some .ma exporters omit quotes for simple attrs, e.g.:
+    #   setAttr .tx 1;
+    # Keep this fallback narrow so string payloads and type names are not treated
+    # as attrs in normal quoted Maya ASCII.
+    m2 = UNQUOTED_SETATTR_ATTR_RE.match(stmt)
+    if not m2:
+        return None
+    attr = m2.group(1)
+    if attr.startswith('.') or ('.' in attr and not attr.startswith('-')):
+        return m2.start(1), m2.end(1), attr
+    return None
+
+
 def resolve_node_and_attr(attr_string: str, current_node: Optional[str]) -> tuple[Optional[str], str]:
     """Resolve a setAttr token into (node_name, attr_path)."""
     if attr_string.startswith('.'):
@@ -214,11 +243,11 @@ def resolve_node_and_attr(attr_string: str, current_node: Optional[str]) -> tupl
 
 
 def split_at_attr(stmt: str) -> Optional[tuple[str, str, str]]:
-    m = find_attr_token(stmt)
-    if not m:
+    ref = find_attr_ref(stmt)
+    if not ref:
         return None
-    attr = m.group(1)
-    return stmt[:m.end()], attr, stmt[m.end():]
+    _start, end, attr = ref
+    return stmt[:end], attr, stmt[end:]
 
 
 def split_value_tail(stmt: str) -> Optional[tuple[str, str]]:
@@ -447,6 +476,42 @@ def scale_nurbs_surface_cc(stmt: str, scale: float) -> tuple[str, int]:
         return stmt, 0
 
 
+def scale_point_array_stmt(stmt: str, scale: float) -> tuple[str, int]:
+    """Scale Maya pointArray XYZ payloads while preserving count and weights.
+
+    Maya pointArray data is normally:
+        count x y z w x y z w ...
+    The trailing W value is a rational weight, not a distance.
+    """
+    marker = '-type "pointArray"'
+    pos = stmt.find(marker)
+    if pos < 0:
+        return stmt, 0
+    before = stmt[:pos + len(marker)]
+    data = stmt[pos + len(marker):]
+    tokens = list(NUM_RE.finditer(data))
+    if len(tokens) < 5:
+        return stmt, 0
+    try:
+        point_count = int(float(tokens[0].group(0)))
+    except Exception:
+        return stmt, 0
+
+    coord_indices: set[int] = set()
+    idx = 1
+    for _ in range(point_count):
+        for j in range(4):
+            if idx >= len(tokens):
+                break
+            if j < 3:
+                coord_indices.add(idx)
+            idx += 1
+    if not coord_indices:
+        return stmt, 0
+    new_data, n = replace_numbers_by_indices(data, coord_indices, scale)
+    return before + new_data, n
+
+
 def scale_addattr_default(stmt: str, scale: float, extra_names: set[str]) -> tuple[str, int]:
     sn = ADD_SN_RE.search(stmt)
     ln = ADD_LN_RE.search(stmt)
@@ -477,6 +542,7 @@ class Options:
         self.preset: str = args.preset
         self.sdk_mode: str = args.sdk_mode
         self.rest_mode: str = args.rest_mode
+        self.rest_vector_mode: str = args.rest_vector_mode
         self.scale_translate_limits: bool = args.scale_translate_limits
         self.scale_linear_animation: bool = args.scale_linear_animation
         self.dry_run: bool = args.dry_run
@@ -487,6 +553,7 @@ class Options:
         if args.extra_rest_regex:
             rest_regex = f'(?:{rest_regex})|(?:{args.extra_rest_regex})'
         self.rest_node_re = re.compile(rest_regex, re.I)
+        self.sdk_node_re = re.compile(args.sdk_node_regex or DEFAULT_SDK_LINEAR_NODE_REGEX, re.I)
 
         if self.sdk_mode == 'auto':
             self.effective_sdk_mode = 'linear-output' if self.preset == 'adv' else 'none'
@@ -515,11 +582,11 @@ def process_setattr(
     opts: Options,
     report: Counter,
 ) -> str:
-    token_m = find_attr_token(stmt)
-    if not token_m:
+    attr_ref = find_attr_ref(stmt)
+    if not attr_ref:
         return stmt
 
-    raw_attr = token_m.group(1)
+    raw_attr = attr_ref[2]
     node_name, attr = resolve_node_and_attr(raw_attr, current_node)
     node_name_short = short_node_name(node_name)
     node_type = node_types.get(node_name or '', None) or node_types.get(node_name_short or '', None) or current_type
@@ -537,6 +604,13 @@ def process_setattr(
         new, n = scale_nurbs_surface_cc(stmt, opts.scale)
         if n:
             report['nurbsSurface_cc_coordinate_numbers'] += n
+        return new
+
+    # 1b) BlendShape/tweak point arrays. Scale XYZ and keep point count/W values.
+    if '-type "pointArray"' in stmt:
+        new, n = scale_point_array_stmt(stmt, opts.scale)
+        if n:
+            report['pointArray_coordinate_numbers'] += n
         return new
 
     # 2) Matrices. Scale translation/pivot parts only, not basis vectors or quaternions.
@@ -575,9 +649,12 @@ def process_setattr(
     # Only scale the first numeric component to avoid changing ratio filler values like 1,1.
     if opts.scale_rest_constants and node_type_l in REST_NODE_TYPES and node_name_s and opts.rest_node_re.search(node_name_s):
         if base in REST_LENGTH_ATTRS:
-            new, n = scale_tail_first_value(stmt, opts.scale)
+            if opts.rest_vector_mode == 'all':
+                new, n = scale_tail_all_values(stmt, opts.scale)
+            else:
+                new, n = scale_tail_first_value(stmt, opts.scale)
             if n:
-                report['rest_length_utility_first_values'] += n
+                report[f'rest_length_utility_{opts.rest_vector_mode}_values'] += n
             return new
 
     # 7) plusMinusAverage 3D offsets often store spatial offsets.
@@ -600,10 +677,13 @@ def process_setattr(
     # animCurveUL: unitless input -> linear output, common for SDK translating shapes/controls.
     # animCurveTL: time input -> linear output, common for translate animation keys.
     if node_type_l == 'animcurveul' and base.startswith('.ktv') and opts.scale_sdk_linear_output:
-        new, n = scale_tail_every_second_value(stmt, opts.scale)
-        if n:
-            report['animCurveUL_linear_output_key_values'] += n
-        return new
+        if opts.sdk_node_re.search(node_name_s):
+            new, n = scale_tail_every_second_value(stmt, opts.scale)
+            if n:
+                report['animCurveUL_linear_output_key_values'] += n
+            return new
+        report['animCurveUL_skipped_by_name_filter'] += 1
+        return stmt
 
     if node_type_l == 'animcurvetl' and base.startswith('.ktv') and opts.scale_linear_animation:
         new, n = scale_tail_every_second_value(stmt, opts.scale)
@@ -732,8 +812,10 @@ def make_report_text(src: Path, dst: Path, opts: Options, report: Counter) -> st
         f'Preset: {opts.preset}',
         f'SDK mode requested: {opts.sdk_mode}',
         f'SDK mode effective: {opts.effective_sdk_mode}',
+        f'SDK node regex: {opts.sdk_node_re.pattern}',
         f'Rest constants requested: {opts.rest_mode}',
         f'Rest constants effective: {opts.effective_rest_mode}',
+        f'Rest vector mode: {opts.rest_vector_mode}',
         f'Scale translate limits: {opts.scale_translate_limits}',
         f'Scale animCurveTL translate animation: {opts.scale_linear_animation}',
         f'Dry run: {opts.dry_run}',
@@ -766,8 +848,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument('--preset', choices=['adv', 'generic'], default='adv', help='Heuristic profile')
     p.add_argument('--sdk-mode', choices=['auto', 'none', 'linear-output'], default='auto',
                    help='Scale animCurveUL output values. auto=linear-output for adv, none for generic')
+    p.add_argument('--sdk-node-regex', default=DEFAULT_SDK_LINEAR_NODE_REGEX,
+                   help='Only scale animCurveUL nodes whose names match this regex. Use ".*" to scale all')
     p.add_argument('--rest-mode', choices=['auto', 'off', 'on'], default='auto',
                    help='Scale named rest-distance constants in utility nodes. auto=on for adv, off for generic')
+    p.add_argument('--rest-vector-mode', choices=['first', 'all'], default='first',
+                   help='For named rest-distance vector attrs, scale only the first component or all components')
     p.add_argument('--scale-translate-limits', action='store_true',
                    help='Scale .mntl/.mxtl translate limits. Usually OFF for face/UI slider panels')
     p.add_argument('--scale-linear-animation', action='store_true',
