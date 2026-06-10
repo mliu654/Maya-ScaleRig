@@ -47,6 +47,50 @@ QTextEdit {
     selection-background-color: #2f80a7;
 }
 
+QComboBox {
+    padding: 6px 34px 6px 10px;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 30px;
+    border-left: 1px solid #e1e7ef;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+    background: #f8fafc;
+}
+
+QComboBox::drop-down:hover {
+    background: #eef6fa;
+}
+
+QComboBox::down-arrow {
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #587086;
+    margin-right: 10px;
+}
+
+QComboBox QAbstractItemView {
+    background: #ffffff;
+    border: 1px solid #cfd7e3;
+    border-radius: 6px;
+    padding: 4px;
+    outline: 0;
+    selection-background-color: #dcecf4;
+    selection-color: #1f2a34;
+}
+
+QDoubleSpinBox {
+    padding: 6px 12px;
+    font-weight: 600;
+    color: #1f3a4d;
+}
+
 QLineEdit:focus,
 QComboBox:focus,
 QDoubleSpinBox:focus,
@@ -127,6 +171,12 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background: #247a9b;
     border-color: #247a9b;
+}
+
+QFrame#optionTogglePanel {
+    background: #f8fafc;
+    border: 1px solid #e0e6ee;
+    border-radius: 8px;
 }
 
 QTableWidget {

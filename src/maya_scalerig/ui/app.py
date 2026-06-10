@@ -25,6 +25,7 @@ try:
         QMessageBox,
         QPushButton,
         QProgressBar,
+        QFrame,
         QTableWidget,
         QTableWidgetItem,
         QTextEdit,
@@ -39,6 +40,7 @@ except ImportError as exc:  # pragma: no cover - depends on optional UI extra
     ) from exc
 
 from maya_scalerig.core.constants import DEFAULT_REST_NODE_REGEX, DEFAULT_SDK_LINEAR_NODE_REGEX
+from maya_scalerig.ui.config import load_settings, save_settings
 from maya_scalerig.ui.i18n import DEFAULT_LANGUAGE, LANGUAGE_NAMES, translate
 from maya_scalerig.ui.style import APP_STYLE
 from maya_scalerig.ui.worker import ScaleWorker, default_output_name
@@ -66,7 +68,10 @@ class MainWindow(QMainWindow):
         self.worker: Optional[ScaleWorker] = None
         self.thread: Optional[QThread] = None
         self.updating_table = False
-        self.language = DEFAULT_LANGUAGE
+        self.settings = load_settings()
+        self.language = self.settings.get('language', DEFAULT_LANGUAGE)
+        if self.language not in LANGUAGE_NAMES:
+            self.language = DEFAULT_LANGUAGE
 
         root = QWidget()
         root.setObjectName('rootWidget')
@@ -80,6 +85,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_table(), 2)
         layout.addWidget(self._build_run_group(), 3)
 
+        self.restore_settings()
         self._connect_signals()
         self.apply_language()
 
@@ -135,6 +141,7 @@ class MainWindow(QMainWindow):
             self.language_combo.addItem(language_name, language_code)
         self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
         self.language_combo.setMinimumHeight(34)
+        self.language_combo.setMinimumWidth(130)
 
         self.scale_spin = QDoubleSpinBox()
         self.scale_spin.setRange(0.0001, 1000000.0)
@@ -142,22 +149,29 @@ class MainWindow(QMainWindow):
         self.scale_spin.setValue(2.5)
         self.scale_spin.setSingleStep(0.1)
         self.scale_spin.setMinimumHeight(34)
+        self.scale_spin.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.scale_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.scale_spin.setSuffix(' x')
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(['adv', 'generic'])
         self.preset_combo.setMinimumHeight(34)
+        self.preset_combo.setMinimumWidth(130)
 
         self.sdk_combo = QComboBox()
         self.sdk_combo.addItems(['auto', 'none', 'linear-output'])
         self.sdk_combo.setMinimumHeight(34)
+        self.sdk_combo.setMinimumWidth(150)
 
         self.rest_combo = QComboBox()
         self.rest_combo.addItems(['auto', 'off', 'on'])
         self.rest_combo.setMinimumHeight(34)
+        self.rest_combo.setMinimumWidth(130)
 
         self.rest_vector_combo = QComboBox()
         self.rest_vector_combo.addItems(['first', 'all'])
         self.rest_vector_combo.setMinimumHeight(34)
+        self.rest_vector_combo.setMinimumWidth(130)
 
         self.scale_translate_limits_check = QCheckBox()
         self.scale_linear_animation_check = QCheckBox()
@@ -169,6 +183,16 @@ class MainWindow(QMainWindow):
         self.sdk_mode_label = QLabel()
         self.rest_mode_label = QLabel()
         self.rest_vector_label = QLabel()
+        self.toggle_panel = QFrame()
+        self.toggle_panel.setObjectName('optionTogglePanel')
+        toggle_layout = QHBoxLayout(self.toggle_panel)
+        toggle_layout.setContentsMargins(10, 8, 10, 8)
+        toggle_layout.setSpacing(18)
+        toggle_layout.addWidget(self.scale_translate_limits_check)
+        toggle_layout.addWidget(self.scale_linear_animation_check)
+        toggle_layout.addWidget(self.dry_run_check)
+        toggle_layout.addWidget(self.write_report_check)
+        toggle_layout.addStretch(1)
 
         layout.setHorizontalSpacing(10)
         layout.setVerticalSpacing(10)
@@ -190,11 +214,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.rest_combo, 2, 1)
         layout.addWidget(self.rest_vector_label, 2, 2)
         layout.addWidget(self.rest_vector_combo, 2, 3)
-        layout.addWidget(self.scale_translate_limits_check, 2, 4, 1, 2)
-
-        layout.addWidget(self.scale_linear_animation_check, 3, 0, 1, 2)
-        layout.addWidget(self.dry_run_check, 3, 2)
-        layout.addWidget(self.write_report_check, 3, 3)
+        layout.addWidget(self.toggle_panel, 3, 0, 1, 6)
 
         return self.options_group
 
@@ -266,9 +286,80 @@ class MainWindow(QMainWindow):
         self.table.itemChanged.connect(self.handle_table_item_changed)
         self.selected_output_name_edit.editingFinished.connect(self.apply_selected_output_name)
         self.language_combo.currentIndexChanged.connect(self.change_language)
+        self.scale_spin.valueChanged.connect(lambda _value: self.save_current_settings())
+        self.preset_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
+        self.sdk_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
+        self.rest_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
+        self.rest_vector_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
+        self.output_dir_edit.editingFinished.connect(self.save_current_settings)
+        self.scale_translate_limits_check.toggled.connect(lambda _checked: self.save_current_settings())
+        self.scale_linear_animation_check.toggled.connect(lambda _checked: self.save_current_settings())
+        self.dry_run_check.toggled.connect(lambda _checked: self.save_current_settings())
+        self.write_report_check.toggled.connect(lambda _checked: self.save_current_settings())
 
     def tr(self, key: str, **kwargs: object) -> str:
         return translate(self.language, key, **kwargs)
+
+    def restore_settings(self) -> None:
+        try:
+            self.scale_spin.setValue(float(self.settings.get('scale', self.scale_spin.value())))
+        except (TypeError, ValueError):
+            pass
+        self.set_combo_value(self.preset_combo, self.settings.get('preset'))
+        self.set_combo_value(self.sdk_combo, self.settings.get('sdk_mode'))
+        self.set_combo_value(self.rest_combo, self.settings.get('rest_mode'))
+        self.set_combo_value(self.rest_vector_combo, self.settings.get('rest_vector_mode'))
+        self.set_combo_data(self.language_combo, self.language)
+
+        self.output_dir_edit.setText(str(self.settings.get('output_dir', '')))
+        self.scale_translate_limits_check.setChecked(bool(self.settings.get('scale_translate_limits', False)))
+        self.scale_linear_animation_check.setChecked(bool(self.settings.get('scale_linear_animation', False)))
+        self.dry_run_check.setChecked(bool(self.settings.get('dry_run', False)))
+        self.write_report_check.setChecked(bool(self.settings.get('write_report', True)))
+
+    def set_combo_value(self, combo: QComboBox, value: object) -> None:
+        if value is None:
+            return
+        index = combo.findText(str(value))
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def set_combo_data(self, combo: QComboBox, value: object) -> None:
+        if value is None:
+            return
+        index = combo.findData(value)
+        if index >= 0:
+            combo.setCurrentIndex(index)
+
+    def browse_start_dir(self, key: str) -> str:
+        raw = self.settings.get(key) or self.output_dir_edit.text().strip()
+        if not raw:
+            return ''
+        path = Path(str(raw))
+        if path.is_file():
+            path = path.parent
+        return str(path) if path.exists() else ''
+
+    def current_settings(self) -> dict[str, Any]:
+        return {
+            'language': self.language,
+            'last_input_dir': self.settings.get('last_input_dir', ''),
+            'last_output_dir': self.settings.get('last_output_dir', ''),
+            'output_dir': self.output_dir_edit.text().strip(),
+            'scale': self.scale_spin.value(),
+            'preset': self.preset_combo.currentText(),
+            'sdk_mode': self.sdk_combo.currentText(),
+            'rest_mode': self.rest_combo.currentText(),
+            'rest_vector_mode': self.rest_vector_combo.currentText(),
+            'scale_translate_limits': self.scale_translate_limits_check.isChecked(),
+            'scale_linear_animation': self.scale_linear_animation_check.isChecked(),
+            'dry_run': self.dry_run_check.isChecked(),
+            'write_report': self.write_report_check.isChecked(),
+        }
+
+    def save_current_settings(self) -> None:
+        self.settings.update(self.current_settings())
+        save_settings(self.settings)
 
     def change_language(self) -> None:
         language = self.language_combo.currentData()
@@ -276,6 +367,7 @@ class MainWindow(QMainWindow):
             return
         self.language = language
         self.apply_language()
+        self.save_current_settings()
 
     def apply_language(self) -> None:
         self.setWindowTitle(self.tr('app_title'))
@@ -343,26 +435,36 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(
             self,
             self.tr('select_maya_ascii_file'),
-            '',
+            self.browse_start_dir('last_input_dir'),
             self.tr('file_filter'),
         )
         if path:
             self.input_edit.setText(path)
+            self.settings['last_input_dir'] = str(Path(path).parent)
+            self.save_current_settings()
 
     def browse_multiple_inputs(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             self.tr('select_maya_ascii_files'),
-            '',
+            self.browse_start_dir('last_input_dir'),
             self.tr('file_filter'),
         )
         if paths:
+            self.settings['last_input_dir'] = str(Path(paths[0]).parent)
             self.add_input_paths([Path(p) for p in paths])
+            self.save_current_settings()
 
     def browse_output_dir(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, self.tr('select_output_folder'))
+        path = QFileDialog.getExistingDirectory(
+            self,
+            self.tr('select_output_folder'),
+            self.browse_start_dir('last_output_dir'),
+        )
         if path:
             self.output_dir_edit.setText(path)
+            self.settings['last_output_dir'] = path
+            self.save_current_settings()
 
     def add_paths_from_edit(self) -> None:
         raw = self.input_edit.text().strip()
@@ -370,6 +472,9 @@ class MainWindow(QMainWindow):
             return
         paths = [Path(part.strip().strip('"')) for part in raw.split(';') if part.strip()]
         self.add_input_paths(paths)
+        if paths:
+            self.settings['last_input_dir'] = str(paths[0].parent)
+            self.save_current_settings()
 
     def add_input_paths(self, paths: list[Path]) -> None:
         self.updating_table = True
@@ -394,6 +499,7 @@ class MainWindow(QMainWindow):
 
                 if not self.output_dir_edit.text().strip() and path.parent:
                     self.output_dir_edit.setText(str(path.parent))
+                    self.settings['output_dir'] = str(path.parent)
         finally:
             self.updating_table = False
         if self.table.rowCount() and self.table.currentRow() < 0:
@@ -489,6 +595,7 @@ class MainWindow(QMainWindow):
         return jobs
 
     def start_processing(self) -> None:
+        self.save_current_settings()
         jobs = self.build_jobs()
         if not jobs:
             QMessageBox.warning(self, self.tr('no_files_title'), self.tr('no_files_message'))
@@ -554,6 +661,10 @@ class MainWindow(QMainWindow):
         self.append_log(self.tr('log_finished') if ok else self.tr('log_finished_with_errors'))
         self.worker = None
         self.thread = None
+
+    def closeEvent(self, event: object) -> None:
+        self.save_current_settings()
+        super().closeEvent(event)
 
 
 def main() -> int:
