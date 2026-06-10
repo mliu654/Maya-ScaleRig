@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maya-scalerig"
+version = "0.1.0"
+description = "Scale scene-space data inside Maya ASCII rig files without changing controller scale channels."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "Maya ScaleRig contributors" }
+]
+keywords = ["maya", "rigging", "ma", "scaling", "advanced-skeleton"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Multimedia :: Graphics :: 3D Modeling",
+  "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+[project.optional-dependencies]
+ui = ["PyQt6>=6.6"]
+
+[project.scripts]
+maya-scalerig = "maya_scalerig.core.scale_ma_rig_space_universal:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

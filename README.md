@@ -8,6 +8,31 @@ at the file-data level. It edits only values that are likely to represent
 positions, lengths, pivots, bind matrices, curve CVs, mesh vertices, and selected
 rig rest-length constants.
 
+## Project Layout
+
+```text
+Maya-ScaleRig/
+├─ src/
+│  └─ maya_scalerig/
+│     ├─ core/
+│     │  └─ scale_ma_rig_space_universal.py
+│     └─ ui/
+│        └─ README.md
+├─ tests/
+│  └─ fixtures/
+│     └─ input.ma
+├─ docs/
+│  └─ MA_rig_space_scale_logic_summary.md
+├─ README.md
+├─ pyproject.toml
+└─ .gitignore
+```
+
+The project is a standalone Python tool. It does not need to be installed into
+Maya's scripts, plug-ins, or modules folders. The future PyQt6 interface will
+live under `src/maya_scalerig/ui/` and call the same core scaler used by the
+command line.
+
 ## Why This Exists
 
 Scaling a rig by parenting it under a `scale = 2.5` group is quick, but it can
@@ -30,23 +55,37 @@ scaled directly:
 Run a dry run first:
 
 ```powershell
-python .\scale_ma_rig_space_universal.py .\input.ma .\output_2p5.ma 2.5 --dry-run
+python .\src\maya_scalerig\core\scale_ma_rig_space_universal.py .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --dry-run
 ```
 
 Generate a scaled file and report:
 
 ```powershell
-python .\scale_ma_rig_space_universal.py .\input.ma .\output_2p5.ma 2.5 --preset adv --report .\output_2p5_report.txt
+python .\src\maya_scalerig\core\scale_ma_rig_space_universal.py .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --preset adv --report .\output_2p5_report.txt
 ```
 
 Use the more conservative generic profile:
 
 ```powershell
-python .\scale_ma_rig_space_universal.py .\input.ma .\output_generic_2p5.ma 2.5 --preset generic --sdk-mode none --report .\generic_report.txt
+python .\src\maya_scalerig\core\scale_ma_rig_space_universal.py .\tests\fixtures\input.ma .\output_generic_2p5.ma 2.5 --preset generic --sdk-mode none --report .\generic_report.txt
 ```
 
 Never overwrite the source file directly. The script refuses to write to the
 same path as the input, but you should still keep a separate backup.
+
+You can also install the package in editable mode:
+
+```powershell
+python -m pip install -e .
+maya-scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --dry-run
+```
+
+For module execution without installation:
+
+```powershell
+$env:PYTHONPATH = ".\src"
+python -m maya_scalerig .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --dry-run
+```
 
 ## Main Options
 
@@ -100,7 +139,7 @@ Adds a vector attribute to the scale whitelist. Can be repeated.
 Example:
 
 ```powershell
-python .\scale_ma_rig_space_universal.py in.ma out.ma 2.5 --extra-vector-attr .los
+python .\src\maya_scalerig\core\scale_ma_rig_space_universal.py in.ma out.ma 2.5 --extra-vector-attr .los
 ```
 
 `--extra-scalar-attr ATTR`
@@ -208,7 +247,10 @@ decode failures.
 Before publishing a change, run:
 
 ```powershell
-python -m py_compile .\scale_ma_rig_space_universal.py
-python .\scale_ma_rig_space_universal.py .\input.ma .\output_2p5.ma 2.5 --dry-run
+python -c "from pathlib import Path; p=Path('src/maya_scalerig/core/scale_ma_rig_space_universal.py'); compile(p.read_text(encoding='utf-8'), str(p), 'exec'); print('syntax ok')"
+python .\src\maya_scalerig\core\scale_ma_rig_space_universal.py .\tests\fixtures\input.ma .\output_2p5.ma 2.5 --dry-run
 ```
 
+`py_compile` is also fine in normal local development. The inline `compile()`
+command above avoids creating `__pycache__` files when a restricted environment
+does not allow cache writes.
