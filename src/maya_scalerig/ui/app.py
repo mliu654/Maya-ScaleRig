@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Optional
 
 try:
-    from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal
+    from PyQt6.QtCore import Qt, QThread
     from PyQt6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -37,86 +37,13 @@ except ImportError as exc:  # pragma: no cover - depends on optional UI extra
     ) from exc
 
 from maya_scalerig.core.constants import DEFAULT_REST_NODE_REGEX, DEFAULT_SDK_LINEAR_NODE_REGEX
-from maya_scalerig.core.options import Options
-from maya_scalerig.core.processor import make_report_text, process_file
+from maya_scalerig.ui.i18n import DEFAULT_LANGUAGE, LANGUAGE_NAMES, translate
+from maya_scalerig.ui.worker import ScaleWorker, default_output_name
 
 
 INPUT_COL = 0
 OUTPUT_COL = 1
 STATUS_COL = 2
-
-
-def default_output_name(input_path: Path, scale: float) -> str:
-    scale_text = f'{scale:g}'
-    return f'{input_path.stem}_{scale_text}{input_path.suffix or ".ma"}'
-
-
-def report_path_for(output_path: Path) -> Path:
-    return output_path.with_name(f'{output_path.stem}_report.txt')
-
-
-class ScaleWorker(QObject):
-    progress_changed = pyqtSignal(int, int)
-    row_status_changed = pyqtSignal(int, str)
-    log_message = pyqtSignal(str)
-    finished = pyqtSignal(bool)
-
-    def __init__(self, jobs: list[dict[str, Any]], options_data: dict[str, Any]):
-        super().__init__()
-        self.jobs = jobs
-        self.options_data = options_data
-        self.cancel_requested = False
-
-    def cancel(self) -> None:
-        self.cancel_requested = True
-
-    def run(self) -> None:
-        total = len(self.jobs)
-        ok = True
-        self.progress_changed.emit(0, total)
-
-        for index, job in enumerate(self.jobs, start=1):
-            if self.cancel_requested:
-                self.log_message.emit('Cancelled before remaining files were processed.')
-                ok = False
-                break
-
-            row = job['row']
-            src: Path = job['input']
-            dst: Path = job['output']
-            self.row_status_changed.emit(row, 'Running')
-            self.log_message.emit(f'[{index}/{total}] Processing: {src}')
-
-            try:
-                if not src.exists():
-                    raise FileNotFoundError(f'Input not found: {src}')
-                if src.resolve() == dst.resolve() and not self.options_data['dry_run']:
-                    raise ValueError('Input and output must be different files.')
-                if not self.options_data['dry_run'] or self.options_data['write_report']:
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-
-                opts = Options(SimpleNamespace(**self.options_data))
-                report = process_file(src, dst, opts)
-                report_text = make_report_text(src, dst, opts, report)
-
-                if self.options_data['write_report']:
-                    report_path_for(dst).write_text(report_text, encoding='utf-8')
-
-                total_scaled = report.get('total_scaled_numbers', 0)
-                self.row_status_changed.emit(row, f'Done ({total_scaled})')
-                self.log_message.emit(report_text)
-                if not opts.dry_run:
-                    self.log_message.emit(f'Saved: {dst}')
-                if self.options_data['write_report']:
-                    self.log_message.emit(f'Report: {report_path_for(dst)}')
-            except Exception as exc:  # pragma: no cover - UI runtime path
-                ok = False
-                self.row_status_changed.emit(row, 'Error')
-                self.log_message.emit(f'ERROR: {src}\n{exc}')
-
-            self.progress_changed.emit(index, total)
-
-        self.finished.emit(ok)
 
 
 class MainWindow(QMainWindow):
@@ -128,6 +55,7 @@ class MainWindow(QMainWindow):
         self.worker: Optional[ScaleWorker] = None
         self.thread: Optional[QThread] = None
         self.updating_table = False
+        self.language = DEFAULT_LANGUAGE
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -139,42 +67,49 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._build_run_group())
 
         self._connect_signals()
+        self.apply_language()
 
     def _build_file_group(self) -> QGroupBox:
-        group = QGroupBox('Files')
-        layout = QGridLayout(group)
+        self.files_group = QGroupBox()
+        layout = QGridLayout(self.files_group)
 
         self.input_edit = QLineEdit()
-        self.input_edit.setPlaceholderText('Input .ma path, or multiple paths separated by ;')
-        self.browse_input_btn = QPushButton('Browse')
-        self.add_input_btn = QPushButton('Add')
-        self.add_multiple_btn = QPushButton('Add Files')
+        self.browse_input_btn = QPushButton()
+        self.add_input_btn = QPushButton()
+        self.add_multiple_btn = QPushButton()
 
         self.output_dir_edit = QLineEdit()
-        self.output_dir_edit.setPlaceholderText('Output folder. Empty = same folder as input')
-        self.browse_output_btn = QPushButton('Browse')
+        self.browse_output_btn = QPushButton()
 
         self.selected_output_name_edit = QLineEdit()
-        self.selected_output_name_edit.setPlaceholderText('Output name for selected row')
+        self.input_label = QLabel()
+        self.output_dir_label = QLabel()
+        self.selected_output_name_label = QLabel()
 
-        layout.addWidget(QLabel('Input'), 0, 0)
+        layout.addWidget(self.input_label, 0, 0)
         layout.addWidget(self.input_edit, 0, 1)
         layout.addWidget(self.browse_input_btn, 0, 2)
         layout.addWidget(self.add_input_btn, 0, 3)
         layout.addWidget(self.add_multiple_btn, 0, 4)
 
-        layout.addWidget(QLabel('Output folder'), 1, 0)
+        layout.addWidget(self.output_dir_label, 1, 0)
         layout.addWidget(self.output_dir_edit, 1, 1, 1, 3)
         layout.addWidget(self.browse_output_btn, 1, 4)
 
-        layout.addWidget(QLabel('Selected output name'), 2, 0)
+        layout.addWidget(self.selected_output_name_label, 2, 0)
         layout.addWidget(self.selected_output_name_edit, 2, 1, 1, 4)
 
-        return group
+        return self.files_group
 
     def _build_options_group(self) -> QGroupBox:
-        group = QGroupBox('Options')
-        layout = QGridLayout(group)
+        self.options_group = QGroupBox()
+        layout = QGridLayout(self.options_group)
+
+        self.language_label = QLabel()
+        self.language_combo = QComboBox()
+        for language_code, language_name in LANGUAGE_NAMES.items():
+            self.language_combo.addItem(language_name, language_code)
+        self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
 
         self.scale_spin = QDoubleSpinBox()
         self.scale_spin.setRange(0.0001, 1000000.0)
@@ -194,30 +129,38 @@ class MainWindow(QMainWindow):
         self.rest_vector_combo = QComboBox()
         self.rest_vector_combo.addItems(['first', 'all'])
 
-        self.scale_translate_limits_check = QCheckBox('Scale translate limits')
-        self.scale_linear_animation_check = QCheckBox('Scale animCurveTL translate animation')
-        self.dry_run_check = QCheckBox('Dry run')
-        self.write_report_check = QCheckBox('Write report txt')
+        self.scale_translate_limits_check = QCheckBox()
+        self.scale_linear_animation_check = QCheckBox()
+        self.dry_run_check = QCheckBox()
+        self.write_report_check = QCheckBox()
         self.write_report_check.setChecked(True)
+        self.scale_label = QLabel()
+        self.preset_label = QLabel()
+        self.sdk_mode_label = QLabel()
+        self.rest_mode_label = QLabel()
+        self.rest_vector_label = QLabel()
 
-        layout.addWidget(QLabel('Scale'), 0, 0)
-        layout.addWidget(self.scale_spin, 0, 1)
-        layout.addWidget(QLabel('Preset'), 0, 2)
-        layout.addWidget(self.preset_combo, 0, 3)
-        layout.addWidget(QLabel('SDK mode'), 0, 4)
-        layout.addWidget(self.sdk_combo, 0, 5)
+        layout.addWidget(self.language_label, 0, 0)
+        layout.addWidget(self.language_combo, 0, 1)
 
-        layout.addWidget(QLabel('Rest mode'), 1, 0)
-        layout.addWidget(self.rest_combo, 1, 1)
-        layout.addWidget(QLabel('Rest vector'), 1, 2)
-        layout.addWidget(self.rest_vector_combo, 1, 3)
-        layout.addWidget(self.scale_translate_limits_check, 1, 4, 1, 2)
+        layout.addWidget(self.scale_label, 1, 0)
+        layout.addWidget(self.scale_spin, 1, 1)
+        layout.addWidget(self.preset_label, 1, 2)
+        layout.addWidget(self.preset_combo, 1, 3)
+        layout.addWidget(self.sdk_mode_label, 1, 4)
+        layout.addWidget(self.sdk_combo, 1, 5)
 
-        layout.addWidget(self.scale_linear_animation_check, 2, 0, 1, 2)
-        layout.addWidget(self.dry_run_check, 2, 2)
-        layout.addWidget(self.write_report_check, 2, 3)
+        layout.addWidget(self.rest_mode_label, 2, 0)
+        layout.addWidget(self.rest_combo, 2, 1)
+        layout.addWidget(self.rest_vector_label, 2, 2)
+        layout.addWidget(self.rest_vector_combo, 2, 3)
+        layout.addWidget(self.scale_translate_limits_check, 2, 4, 1, 2)
 
-        return group
+        layout.addWidget(self.scale_linear_animation_check, 3, 0, 1, 2)
+        layout.addWidget(self.dry_run_check, 3, 2)
+        layout.addWidget(self.write_report_check, 3, 3)
+
+        return self.options_group
 
     def _build_table(self) -> QTableWidget:
         self.table = QTableWidget(0, 3)
@@ -234,11 +177,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(box)
 
         button_row = QHBoxLayout()
-        self.refresh_names_btn = QPushButton('Refresh Default Names')
-        self.remove_selected_btn = QPushButton('Remove Selected')
-        self.clear_btn = QPushButton('Clear')
-        self.run_btn = QPushButton('Run')
-        self.cancel_btn = QPushButton('Cancel')
+        self.refresh_names_btn = QPushButton()
+        self.remove_selected_btn = QPushButton()
+        self.clear_btn = QPushButton()
+        self.run_btn = QPushButton()
+        self.cancel_btn = QPushButton()
         self.cancel_btn.setEnabled(False)
         button_row.addWidget(self.refresh_names_btn)
         button_row.addWidget(self.remove_selected_btn)
@@ -252,7 +195,6 @@ class MainWindow(QMainWindow):
 
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setPlaceholderText('Logs and reports will appear here.')
 
         layout.addLayout(button_row)
         layout.addWidget(self.progress)
@@ -272,19 +214,101 @@ class MainWindow(QMainWindow):
         self.table.itemSelectionChanged.connect(self.sync_selected_output_name)
         self.table.itemChanged.connect(self.handle_table_item_changed)
         self.selected_output_name_edit.editingFinished.connect(self.apply_selected_output_name)
+        self.language_combo.currentIndexChanged.connect(self.change_language)
+
+    def tr(self, key: str, **kwargs: object) -> str:
+        return translate(self.language, key, **kwargs)
+
+    def change_language(self) -> None:
+        language = self.language_combo.currentData()
+        if not language or language == self.language:
+            return
+        self.language = language
+        self.apply_language()
+
+    def apply_language(self) -> None:
+        self.setWindowTitle(self.tr('app_title'))
+        self.files_group.setTitle(self.tr('files_group'))
+        self.options_group.setTitle(self.tr('options_group'))
+
+        self.language_label.setText(self.tr('language'))
+        for index in range(self.language_combo.count()):
+            language_code = self.language_combo.itemData(index)
+            self.language_combo.setItemText(index, LANGUAGE_NAMES[language_code])
+
+        self.input_label.setText(self.tr('input'))
+        self.input_edit.setPlaceholderText(self.tr('input_placeholder'))
+        self.browse_input_btn.setText(self.tr('browse'))
+        self.add_input_btn.setText(self.tr('add'))
+        self.add_multiple_btn.setText(self.tr('add_files'))
+        self.output_dir_label.setText(self.tr('output_folder'))
+        self.output_dir_edit.setPlaceholderText(self.tr('output_placeholder'))
+        self.browse_output_btn.setText(self.tr('browse'))
+        self.selected_output_name_label.setText(self.tr('selected_output_name'))
+        self.selected_output_name_edit.setPlaceholderText(self.tr('output_name_placeholder'))
+
+        self.scale_label.setText(self.tr('scale'))
+        self.preset_label.setText(self.tr('preset'))
+        self.sdk_mode_label.setText(self.tr('sdk_mode'))
+        self.rest_mode_label.setText(self.tr('rest_mode'))
+        self.rest_vector_label.setText(self.tr('rest_vector'))
+        self.scale_translate_limits_check.setText(self.tr('scale_translate_limits'))
+        self.scale_linear_animation_check.setText(self.tr('scale_linear_animation'))
+        self.dry_run_check.setText(self.tr('dry_run'))
+        self.write_report_check.setText(self.tr('write_report'))
+
+        self.table.setHorizontalHeaderLabels([
+            self.tr('table_input_file'),
+            self.tr('table_output_name'),
+            self.tr('table_status'),
+        ])
+        self.refresh_names_btn.setText(self.tr('refresh_default_names'))
+        self.remove_selected_btn.setText(self.tr('remove_selected'))
+        self.clear_btn.setText(self.tr('clear'))
+        self.run_btn.setText(self.tr('run'))
+        self.cancel_btn.setText(self.tr('cancel'))
+        self.log.setPlaceholderText(self.tr('log_placeholder'))
+        self.refresh_status_language()
+
+    def refresh_status_language(self) -> None:
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, STATUS_COL)
+            if not item:
+                continue
+            current = item.text()
+            if any(current == translate(lang, 'status_pending') for lang in LANGUAGE_NAMES):
+                item.setText(self.tr('status_pending'))
+            elif any(current == translate(lang, 'status_running') for lang in LANGUAGE_NAMES):
+                item.setText(self.tr('status_running'))
+            elif any(current == translate(lang, 'status_error') for lang in LANGUAGE_NAMES):
+                item.setText(self.tr('status_error'))
+            else:
+                done_match = re.match(r'^(?:Done|完成) \((\d+)\)$', current)
+                if done_match:
+                    item.setText(self.tr('status_done', total=done_match.group(1)))
 
     def browse_single_input(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, 'Select Maya ASCII file', '', 'Maya ASCII (*.ma);;All Files (*)')
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.tr('select_maya_ascii_file'),
+            '',
+            self.tr('file_filter'),
+        )
         if path:
             self.input_edit.setText(path)
 
     def browse_multiple_inputs(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, 'Select Maya ASCII files', '', 'Maya ASCII (*.ma);;All Files (*)')
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            self.tr('select_maya_ascii_files'),
+            '',
+            self.tr('file_filter'),
+        )
         if paths:
             self.add_input_paths([Path(p) for p in paths])
 
     def browse_output_dir(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, 'Select output folder')
+        path = QFileDialog.getExistingDirectory(self, self.tr('select_output_folder'))
         if path:
             self.output_dir_edit.setText(path)
 
@@ -308,7 +332,7 @@ class MainWindow(QMainWindow):
                 output_item = QTableWidgetItem(default_output_name(path, self.scale_spin.value()))
                 output_item.setData(Qt.ItemDataRole.UserRole, False)
 
-                status_item = QTableWidgetItem('Pending')
+                status_item = QTableWidgetItem(self.tr('status_pending'))
                 status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
 
                 self.table.setItem(row, INPUT_COL, input_item)
@@ -414,16 +438,16 @@ class MainWindow(QMainWindow):
     def start_processing(self) -> None:
         jobs = self.build_jobs()
         if not jobs:
-            QMessageBox.warning(self, 'No files', 'Add at least one input .ma file.')
+            QMessageBox.warning(self, self.tr('no_files_title'), self.tr('no_files_message'))
             return
 
         self.log.clear()
         self.progress.setRange(0, len(jobs))
         self.progress.setValue(0)
         for job in jobs:
-            self.set_row_status(job['row'], 'Pending')
+            self.set_row_status(job['row'], self.tr('status_pending'))
 
-        self.worker = ScaleWorker(jobs, self.build_options_data())
+        self.worker = ScaleWorker(jobs, self.build_options_data(), self.language)
         self.thread = QThread(self)
         self.worker.moveToThread(self.thread)
 
@@ -442,7 +466,7 @@ class MainWindow(QMainWindow):
     def cancel_processing(self) -> None:
         if self.worker:
             self.worker.cancel()
-            self.append_log('Cancel requested. Current file will finish first.')
+            self.append_log(self.tr('log_cancel_requested'))
 
     def update_progress(self, current: int, total: int) -> None:
         self.progress.setRange(0, total)
@@ -458,7 +482,7 @@ class MainWindow(QMainWindow):
 
     def processing_finished(self, ok: bool) -> None:
         self.set_running(False)
-        self.append_log('Finished.' if ok else 'Finished with errors or cancellation.')
+        self.append_log(self.tr('log_finished') if ok else self.tr('log_finished_with_errors'))
         self.worker = None
         self.thread = None
 

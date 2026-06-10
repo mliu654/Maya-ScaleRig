@@ -23,6 +23,8 @@ Maya-ScaleRig/
 |       |   +-- text_utils.py
 |       +-- ui/
 |           +-- app.py
+|           +-- i18n.py
+|           +-- worker.py
 |           +-- __main__.py
 |           +-- README.md
 +-- tests/
@@ -113,9 +115,9 @@ $env:PYTHONPATH = ".\src"
 python -m maya_scalerig.ui
 ```
 
-The UI currently supports typed input paths, file pickers, editable output
-folder and output names, scale factor input, batch processing, progress display,
-dry run, report writing, and a log panel.
+The UI currently supports Chinese/English switching, typed input paths, file
+pickers, editable output folder and output names, scale factor input, batch
+processing, progress display, dry run, report writing, and a log panel.
 
 ## Main Options
 
