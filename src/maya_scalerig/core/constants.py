@@ -43,6 +43,32 @@ SKIN_CLUSTER_BIND_PRE_MATRIX_ATTRS = {
     '.pm[]', '.bindprematrix[]',
 }
 
+POLY_GENERATOR_SCALAR_ATTRS_BY_TYPE = {
+    'polycube': {'.w', '.width', '.h', '.height', '.d', '.depth'},
+    'polysphere': {'.r', '.radius'},
+    'polycylinder': {'.r', '.radius', '.h', '.height'},
+    'polycone': {'.r', '.radius', '.h', '.height'},
+    'polyplane': {'.w', '.width', '.h', '.height'},
+    'polytorus': {'.r', '.radius', '.sr', '.sectionradius'},
+}
+
+POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE = {
+    'polycube': {'.w': '1', '.h': '1', '.d': '1'},
+    'polysphere': {'.r': '1'},
+    'polycylinder': {'.r': '1', '.h': '2'},
+    'polycone': {'.r': '1', '.h': '2'},
+    'polyplane': {'.w': '1', '.h': '1'},
+    'polytorus': {'.r': '1', '.sr': '0.5'},
+}
+
+POLY_GENERATOR_ATTR_ALIASES = {
+    '.w': {'.w', '.width'},
+    '.h': {'.h', '.height'},
+    '.d': {'.d', '.depth'},
+    '.r': {'.r', '.radius'},
+    '.sr': {'.sr', '.sectionradius'},
+}
+
 ADV_EYELID_MAIN_JOINT_RE = re.compile(r'^(upper|lower)LidMain\d+_[RL]$')
 ADV_EYELID_AIM_END_RE = re.compile(r'^(upper|lower)LidMain\d+AimEnd_[RL]$')
 ADV_EYELID_MM_RE = re.compile(r'^(upper|lower)LidMain\d+MM_[RL]$')

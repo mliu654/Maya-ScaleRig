@@ -217,6 +217,9 @@ The script scales:
 - Transform position-like attrs such as `.t`, `.tx`, `.ty`, `.tz`, pivots, pivot
   translations, bounding box attrs, and selected custom spatial attrs.
 - Mesh and component coordinate arrays such as `.vt[]`, `.pt[]`, `.pnts[]`.
+- Polygon construction-history dimensions for common primitive generators such as
+  `polyCube`, `polySphere`, `polyCylinder`, `polyCone`, `polyPlane`, and
+  `polyTorus`.
 - NURBS curve and NURBS surface `.cc` CV coordinates.
 - `pointArray` XYZ payloads, such as blendShape/tweak target deltas, while
   preserving point count and rational weights.

@@ -17,6 +17,9 @@ from maya_scalerig.core.constants import (
     CREATE_RE,
     NAME_RE,
     NUM_RE,
+    POLY_GENERATOR_ATTR_ALIASES,
+    POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE,
+    POLY_GENERATOR_SCALAR_ATTRS_BY_TYPE,
     QUOTED_RE,
     REST_LENGTH_ATTRS,
     REST_NODE_TYPES,
@@ -46,6 +49,7 @@ from maya_scalerig.core.text_utils import (
 )
 
 CONNECT_SKIN_INFLUENCE_RE = re.compile(r'connectAttr\s+"([^"]+)\.wm"\s+"([^"]+)\.ma\[(\d+)\]"')
+CONNECT_DEST_RE = re.compile(r'connectAttr\s+"[^"]+"\s+"([^"]+)"')
 SETATTR_MATRIX_RE = re.compile(r'setAttr\s+"([^"]+)"\s+-type\s+"matrix"(.*?);', re.S)
 SETATTR_TRANSLATE_RE = re.compile(r'setAttr\s+"\.t"(?:\s+-type\s+"[^"]+")?(.*?);', re.S)
 
@@ -99,16 +103,35 @@ def _iter_create_blocks(text: str):
         yield current_type, current_name, ''.join(buffer)
 
 
+def _remember_node_attr(store: dict[str, set[str]], node_name: Optional[str], attr: str) -> None:
+    if not node_name:
+        return
+    node_short = short_node_name(node_name) or node_name
+    attr_norm = normalize_attr(attr)
+    store.setdefault(node_name, set()).add(attr_norm)
+    store.setdefault(node_short, set()).add(attr_norm)
+
+
 def build_scene_metadata(src: Path) -> dict[str, Any]:
     text = src.read_text(encoding='latin-1')
     aim_x_by_node: dict[str, float] = {}
     mm_inv_x_by_node: dict[str, tuple[float, float, float]] = {}
     skin_influences: dict[tuple[str, int], str] = {}
     node_names: set[str] = set()
+    poly_generator_attrs: dict[str, set[str]] = {}
+    connected_input_attrs: dict[str, set[str]] = {}
 
-    for _node_type, node_name, block in _iter_create_blocks(text):
+    for node_type, node_name, block in _iter_create_blocks(text):
+        node_type_l = (node_type or '').lower()
         if node_name:
             node_names.add(node_name)
+        if node_name and node_type_l in POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE:
+            for sm in re.finditer(r'\bsetAttr\b.*?;', block, re.S):
+                attr_ref = find_attr_ref(sm.group(0))
+                if not attr_ref:
+                    continue
+                _node, attr = resolve_node_and_attr(attr_ref[2], node_name)
+                _remember_node_attr(poly_generator_attrs, node_name, attr)
         if node_name and ADV_EYELID_AIM_END_RE.match(node_name):
             tm = SETATTR_TRANSLATE_RE.search(block)
             if tm:
@@ -130,11 +153,18 @@ def build_scene_metadata(src: Path) -> dict[str, Any]:
         if influence:
             skin_influences[(short_node_name(skin_node) or skin_node, int(index_s))] = influence
 
+    for cm in CONNECT_DEST_RE.finditer(text):
+        dest = cm.group(1)
+        node_name, attr = resolve_node_and_attr(dest, None)
+        _remember_node_attr(connected_input_attrs, node_name, attr)
+
     return {
         'adv_eyelid_aim_x': aim_x_by_node,
         'adv_eyelid_mm_inv_x': mm_inv_x_by_node,
         'skin_influences': skin_influences,
         'node_names': node_names,
+        'poly_generator_attrs': poly_generator_attrs,
+        'connected_input_attrs': connected_input_attrs,
     }
 
 
@@ -202,6 +232,35 @@ def correct_adv_eyelid_bind_pre_matrix(
         return out
 
     return before + NUM_RE.sub(repl, tail), changed
+
+
+def _attr_seen_or_connected(attrs: set[str], canonical_attr: str) -> bool:
+    aliases = POLY_GENERATOR_ATTR_ALIASES.get(canonical_attr, {canonical_attr})
+    return bool(attrs & aliases)
+
+
+def scaled_poly_generator_default_setattrs(
+    node_name: Optional[str],
+    node_type: Optional[str],
+    opts: Options,
+    report: Counter,
+    metadata: dict[str, Any],
+) -> str:
+    node_type_l = (node_type or '').lower()
+    defaults = POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE.get(node_type_l)
+    if not node_name or not defaults:
+        return ''
+
+    seen = metadata.get('poly_generator_attrs', {}).get(node_name, set())
+    connected = metadata.get('connected_input_attrs', {}).get(node_name, set())
+    lines: list[str] = []
+    for attr, default_value in defaults.items():
+        if _attr_seen_or_connected(seen, attr) or _attr_seen_or_connected(connected, attr):
+            continue
+        scaled_value = fmt_scaled(default_value, opts.scale)
+        lines.append(f'\tsetAttr "{attr}" {scaled_value};\n')
+        report[f'{node_type_l}_default_{attr}_scalar_numbers'] += 1
+    return ''.join(lines)
 
 def process_setattr(
     stmt: str,
@@ -283,6 +342,13 @@ def process_setattr(
             if n:
                 report[f'{base}_scalar_numbers'] += n
             return new
+
+    poly_generator_attrs = POLY_GENERATOR_SCALAR_ATTRS_BY_TYPE.get(node_type_l)
+    if poly_generator_attrs and base in poly_generator_attrs:
+        new, n = scale_tail_all_values(stmt, opts.scale)
+        if n:
+            report[f'{node_type_l}_{base}_scalar_numbers'] += n
+        return new
 
     vector_attrs = set(BASE_VECTOR_ATTRS) | opts.extra_vector_attrs
     if opts.scale_translate_limits:
@@ -379,10 +445,19 @@ def process_file(src: Path, dst: Path, opts: Options) -> Counter:
     node_types: dict[str, str] = {}
     current_node: Optional[str] = None
     current_type: Optional[str] = None
+    injected_poly_default_nodes: set[str] = set()
     stmt_buf = ''
     in_stmt = False
     stmt_in_quote = False
     stmt_escaped = False
+
+    def flush_poly_generator_defaults() -> None:
+        if not current_node or current_node in injected_poly_default_nodes:
+            return
+        extra = scaled_poly_generator_default_setattrs(current_node, current_type, opts, report, metadata)
+        if extra:
+            out_parts.append(extra)
+        injected_poly_default_nodes.add(current_node)
 
     def flush_stmt(statement: str) -> str:
         nonlocal current_node, current_type
@@ -432,8 +507,10 @@ def process_file(src: Path, dst: Path, opts: Options) -> Counter:
 
             cm = CREATE_RE.match(line)
             if cm:
+                flush_poly_generator_defaults()
                 current_node, current_type = update_context_from_create(line, node_types)
             elif SELECT_RE.match(line):
+                flush_poly_generator_defaults()
                 sel_node, sel_type = parse_select_context(line, node_types)
                 if sel_node is not None:
                     current_node = sel_node
@@ -442,6 +519,8 @@ def process_file(src: Path, dst: Path, opts: Options) -> Counter:
 
     if stmt_buf:
         out_parts.append(flush_stmt(stmt_buf))
+
+    flush_poly_generator_defaults()
 
     report['total_scaled_numbers'] = sum(
         v for k, v in report.items()
