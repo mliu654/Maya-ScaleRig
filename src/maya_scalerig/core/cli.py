@@ -23,6 +23,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument('input', type=Path, help='Input .ma file')
     p.add_argument('output', type=Path, help='Output .ma file')
     p.add_argument('scale', type=float, nargs='?', default=2.5, help='Uniform scale factor')
+    p.add_argument('--scale-mode', choices=['complete', 'minimal'], default='complete',
+                   help='complete may add scaled defaults for omitted primitive dimensions; minimal skips optional defaults but keeps live construction history safe')
+    p.add_argument('--minimal', dest='scale_mode', action='store_const', const='minimal',
+                   help='Shortcut for --scale-mode minimal')
     p.add_argument('--preset', choices=['adv', 'generic'], default='adv', help='Heuristic profile')
     p.add_argument('--sdk-mode', choices=['auto', 'none', 'linear-output'], default='auto',
                    help='Scale animCurveUL output values. auto=linear-output for adv, none for generic')

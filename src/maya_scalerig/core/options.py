@@ -17,6 +17,9 @@ class Options:
 
     def __init__(self, args: argparse.Namespace):
         self.scale: float = args.scale
+        self.scale_mode: str = getattr(args, 'scale_mode', 'complete') or 'complete'
+        if self.scale_mode not in {'complete', 'minimal'}:
+            self.scale_mode = 'complete'
         self.preset: str = args.preset
         self.sdk_mode: str = args.sdk_mode
         self.rest_mode: str = args.rest_mode

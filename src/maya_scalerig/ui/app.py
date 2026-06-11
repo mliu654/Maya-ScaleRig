@@ -55,7 +55,10 @@ STATUS_COLORS = {
     'error': ('#a33c3c', '#fff0f0'),
 }
 
+SCALE_MODES = ('complete', 'minimal')
+
 AUTO_RIG_OPTIONS: dict[str, Any] = {
+    'scale_mode': 'complete',
     'preset': 'adv',
     'sdk_mode': 'auto',
     'rest_mode': 'auto',
@@ -142,7 +145,7 @@ class MainWindow(QMainWindow):
 
     def _build_options_group(self) -> QGroupBox:
         self.options_group = QGroupBox()
-        self.options_group.setMinimumHeight(112)
+        self.options_group.setMinimumHeight(154)
         layout = QGridLayout(self.options_group)
         layout.setContentsMargins(12, 18, 12, 12)
         layout.setHorizontalSpacing(12)
@@ -171,6 +174,13 @@ class MainWindow(QMainWindow):
         self.scale_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.scale_spin.setSuffix(' x')
 
+        self.scale_mode_label = QLabel()
+        self.scale_mode_combo = QComboBox()
+        for scale_mode in SCALE_MODES:
+            self.scale_mode_combo.addItem(scale_mode, scale_mode)
+        self.scale_mode_combo.setFixedHeight(36)
+        self.scale_mode_combo.setMinimumWidth(140)
+
         self.write_report_check = QCheckBox()
         self.write_report_check.setChecked(True)
         self.write_report_check.setMinimumHeight(30)
@@ -184,8 +194,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.language_combo, 0, 1)
         layout.addWidget(self.scale_label, 0, 2)
         layout.addWidget(self.scale_spin, 0, 3)
-        layout.addWidget(self.write_report_check, 0, 4)
-        layout.addWidget(self.dry_run_check, 0, 5)
+        layout.addWidget(self.scale_mode_label, 1, 0)
+        layout.addWidget(self.scale_mode_combo, 1, 1)
+        layout.addWidget(self.write_report_check, 1, 4)
+        layout.addWidget(self.dry_run_check, 1, 5)
 
         return self.options_group
 
@@ -258,6 +270,7 @@ class MainWindow(QMainWindow):
         self.selected_output_name_edit.editingFinished.connect(self.apply_selected_output_name)
         self.language_combo.currentIndexChanged.connect(self.change_language)
         self.scale_spin.valueChanged.connect(lambda _value: self.save_current_settings())
+        self.scale_mode_combo.currentIndexChanged.connect(lambda _value: self.save_current_settings())
         self.output_dir_edit.editingFinished.connect(self.save_current_settings)
         self.dry_run_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.write_report_check.toggled.connect(lambda _checked: self.save_current_settings())
@@ -271,6 +284,7 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             pass
         self.set_combo_data(self.language_combo, self.language)
+        self.set_combo_data(self.scale_mode_combo, self.settings.get('scale_mode', 'complete'))
 
         self.output_dir_edit.setText(str(self.settings.get('output_dir', '')))
         self.dry_run_check.setChecked(bool(self.settings.get('dry_run', False)))
@@ -299,6 +313,7 @@ class MainWindow(QMainWindow):
             'last_output_dir': self.settings.get('last_output_dir', ''),
             'output_dir': self.output_dir_edit.text().strip(),
             'scale': self.scale_spin.value(),
+            'scale_mode': self.scale_mode_combo.currentData() or 'complete',
             'dry_run': self.dry_run_check.isChecked(),
             'write_report': self.write_report_check.isChecked(),
         }
@@ -337,6 +352,10 @@ class MainWindow(QMainWindow):
         self.selected_output_name_edit.setPlaceholderText(self.tr('output_name_placeholder'))
 
         self.scale_label.setText(self.tr('scale'))
+        self.scale_mode_label.setText(self.tr('scale_mode'))
+        for index in range(self.scale_mode_combo.count()):
+            scale_mode = self.scale_mode_combo.itemData(index)
+            self.scale_mode_combo.setItemText(index, self.tr(f'scale_mode_{scale_mode}'))
         self.dry_run_check.setText(self.tr('dry_run'))
         self.write_report_check.setText(self.tr('write_report'))
 
@@ -520,6 +539,7 @@ class MainWindow(QMainWindow):
         data = dict(AUTO_RIG_OPTIONS)
         data.update({
             'scale': self.scale_spin.value(),
+            'scale_mode': self.scale_mode_combo.currentData() or 'complete',
             'sdk_node_regex': DEFAULT_SDK_LINEAR_NODE_REGEX,
             'dry_run': self.dry_run_check.isChecked(),
             'extra_vector_attr': [],

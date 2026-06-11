@@ -123,12 +123,25 @@ python -m maya_scalerig.ui
 
 The UI supports Chinese/English switching, typed input paths, file pickers,
 editable output folders and output names, scale factor input, batch processing,
-progress display, dry run, report writing, and a log panel. It runs the core
-scaler with the automatic rig profile: skinCluster bind pre-matrices and the ADV
-eyelid compensation are enabled by default, while low-level debug switches remain
-available from the CLI.
+progress display, dry run, report writing, processing mode selection, and a log
+panel. It runs the core scaler with the automatic rig profile: skinCluster bind
+pre-matrices and the ADV eyelid compensation are enabled by default, while
+low-level debug switches remain available from the CLI.
 
 ## Main Options
+
+`--scale-mode complete|minimal`
+
+Controls how aggressively the scaler fills in missing Maya default values. The
+`complete` mode is the default and may add scaled defaults for omitted primitive
+history dimensions, such as writing `polyCylinder.radius` when Maya relied on the
+default radius. The `minimal` mode skips optional missing defaults when they are
+not driving geometry, but still writes scaled defaults for live construction
+history so mesh size and skinCluster input geometry stay consistent.
+
+`--minimal`
+
+Shortcut for `--scale-mode minimal`.
 
 `--preset adv`
 

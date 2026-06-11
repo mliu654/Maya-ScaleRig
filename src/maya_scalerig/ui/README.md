@@ -6,8 +6,8 @@ Current responsibilities:
 
 - Add one or more input `.ma` files by typing paths or using file pickers.
 - Switch the interface between Chinese and English.
-- Remember the last used language, scale factor, output folder, and browse folders.
-- Edit the scale factor.
+- Remember the last used language, scale factor, processing mode, output folder, and browse folders.
+- Edit the scale factor and choose Complete or safe Minimal processing mode.
 - Choose an output folder by typing a path or selecting a folder.
 - Customize output names per file. The default is `originalName_scale.ma`.
 - Run batch scaling with a per-file progress bar.

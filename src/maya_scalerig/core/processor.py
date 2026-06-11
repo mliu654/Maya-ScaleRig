@@ -49,9 +49,10 @@ from maya_scalerig.core.text_utils import (
 )
 
 CONNECT_SKIN_INFLUENCE_RE = re.compile(r'connectAttr\s+"([^"]+)\.wm"\s+"([^"]+)\.ma\[(\d+)\]"')
-CONNECT_DEST_RE = re.compile(r'connectAttr\s+"[^"]+"\s+"([^"]+)"')
+CONNECT_ATTR_RE = re.compile(r'connectAttr\b(?:\s+-\S+)*\s+"([^"]+)"\s+"([^"]+)"')
 SETATTR_MATRIX_RE = re.compile(r'setAttr\s+"([^"]+)"\s+-type\s+"matrix"(.*?);', re.S)
 SETATTR_TRANSLATE_RE = re.compile(r'setAttr\s+"\.t"(?:\s+-type\s+"[^"]+")?(.*?);', re.S)
+POLY_GENERATOR_OUTPUT_ATTRS = {'.out', '.output'}
 
 
 def _split_adv_side_name(node_name: str, suffix: str = '') -> Optional[tuple[str, str]]:
@@ -112,19 +113,32 @@ def _remember_node_attr(store: dict[str, set[str]], node_name: Optional[str], at
     store.setdefault(node_short, set()).add(attr_norm)
 
 
+def _remember_node_name(store: set[str], node_name: Optional[str]) -> None:
+    if not node_name:
+        return
+    node_short = short_node_name(node_name) or node_name
+    store.add(node_name)
+    store.add(node_short)
+
+
 def build_scene_metadata(src: Path) -> dict[str, Any]:
     text = src.read_text(encoding='latin-1')
     aim_x_by_node: dict[str, float] = {}
     mm_inv_x_by_node: dict[str, tuple[float, float, float]] = {}
     skin_influences: dict[tuple[str, int], str] = {}
     node_names: set[str] = set()
+    node_types: dict[str, str] = {}
     poly_generator_attrs: dict[str, set[str]] = {}
     connected_input_attrs: dict[str, set[str]] = {}
+    live_poly_generators: set[str] = set()
 
     for node_type, node_name, block in _iter_create_blocks(text):
         node_type_l = (node_type or '').lower()
         if node_name:
             node_names.add(node_name)
+            node_short = short_node_name(node_name) or node_name
+            node_types[node_name] = node_type_l
+            node_types[node_short] = node_type_l
         if node_name and node_type_l in POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE:
             for sm in re.finditer(r'\bsetAttr\b.*?;', block, re.S):
                 attr_ref = find_attr_ref(sm.group(0))
@@ -153,10 +167,18 @@ def build_scene_metadata(src: Path) -> dict[str, Any]:
         if influence:
             skin_influences[(short_node_name(skin_node) or skin_node, int(index_s))] = influence
 
-    for cm in CONNECT_DEST_RE.finditer(text):
-        dest = cm.group(1)
-        node_name, attr = resolve_node_and_attr(dest, None)
-        _remember_node_attr(connected_input_attrs, node_name, attr)
+    for cm in CONNECT_ATTR_RE.finditer(text):
+        src_attr_ref, dest_attr_ref = cm.groups()
+        src_node, src_attr = resolve_node_and_attr(src_attr_ref, None)
+        dest_node, dest_attr = resolve_node_and_attr(dest_attr_ref, None)
+        _remember_node_attr(connected_input_attrs, dest_node, dest_attr)
+
+        src_type = node_types.get(src_node or '')
+        if (
+            src_type in POLY_GENERATOR_DEFAULT_SCALAR_ATTRS_BY_TYPE
+            and normalize_attr(src_attr) in POLY_GENERATOR_OUTPUT_ATTRS
+        ):
+            _remember_node_name(live_poly_generators, src_node)
 
     return {
         'adv_eyelid_aim_x': aim_x_by_node,
@@ -165,6 +187,7 @@ def build_scene_metadata(src: Path) -> dict[str, Any]:
         'node_names': node_names,
         'poly_generator_attrs': poly_generator_attrs,
         'connected_input_attrs': connected_input_attrs,
+        'live_poly_generators': live_poly_generators,
     }
 
 
@@ -239,6 +262,12 @@ def _attr_seen_or_connected(attrs: set[str], canonical_attr: str) -> bool:
     return bool(attrs & aliases)
 
 
+def _is_live_poly_generator(node_name: str, metadata: dict[str, Any]) -> bool:
+    live_nodes = metadata.get('live_poly_generators', set())
+    node_short = short_node_name(node_name) or node_name
+    return node_name in live_nodes or node_short in live_nodes
+
+
 def scaled_poly_generator_default_setattrs(
     node_name: Optional[str],
     node_type: Optional[str],
@@ -253,13 +282,24 @@ def scaled_poly_generator_default_setattrs(
 
     seen = metadata.get('poly_generator_attrs', {}).get(node_name, set())
     connected = metadata.get('connected_input_attrs', {}).get(node_name, set())
-    lines: list[str] = []
+    missing_defaults: list[tuple[str, str]] = []
     for attr, default_value in defaults.items():
         if _attr_seen_or_connected(seen, attr) or _attr_seen_or_connected(connected, attr):
             continue
+        missing_defaults.append((attr, default_value))
+
+    if not missing_defaults:
+        return ''
+    if opts.scale_mode == 'minimal' and not _is_live_poly_generator(node_name, metadata):
+        report[f'{node_type_l}_default_scalar_values_skipped_minimal'] += len(missing_defaults)
+        return ''
+
+    lines: list[str] = []
+    for attr, default_value in missing_defaults:
         scaled_value = fmt_scaled(default_value, opts.scale)
         lines.append(f'\tsetAttr "{attr}" {scaled_value};\n')
-        report[f'{node_type_l}_default_{attr}_scalar_numbers'] += 1
+        suffix = '_required_minimal' if opts.scale_mode == 'minimal' else ''
+        report[f'{node_type_l}_default_{attr}_scalar_numbers{suffix}'] += 1
     return ''.join(lines)
 
 def process_setattr(
@@ -538,6 +578,7 @@ def make_report_text(src: Path, dst: Path, opts: Options, report: Counter) -> st
         f'Input: {src}',
         f'Output: {dst}',
         f'Scale factor: {opts.scale}',
+        f'Scale mode: {opts.scale_mode}',
         f'Preset: {opts.preset}',
         f'SDK mode requested: {opts.sdk_mode}',
         f'SDK mode effective: {opts.effective_sdk_mode}',
