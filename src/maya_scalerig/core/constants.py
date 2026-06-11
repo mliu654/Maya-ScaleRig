@@ -39,6 +39,14 @@ TRANSLATE_LIMIT_ATTRS = {
     '.mxtl', '.maxtranslimit',
 }
 
+SKIN_CLUSTER_BIND_PRE_MATRIX_ATTRS = {
+    '.pm[]', '.bindprematrix[]',
+}
+
+ADV_EYELID_MAIN_JOINT_RE = re.compile(r'^(upper|lower)LidMain\d+_[RL]$')
+ADV_EYELID_AIM_END_RE = re.compile(r'^(upper|lower)LidMain\d+AimEnd_[RL]$')
+ADV_EYELID_MM_RE = re.compile(r'^(upper|lower)LidMain\d+MM_[RL]$')
+
 BASE_SCALAR_ATTRS = {
     '.tx', '.ty', '.tz',
     '.translatex', '.translatey', '.translatez',

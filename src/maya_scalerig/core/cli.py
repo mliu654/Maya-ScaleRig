@@ -36,6 +36,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help='Scale .mntl/.mxtl translate limits. Usually OFF for face/UI slider panels')
     p.add_argument('--scale-linear-animation', action='store_true',
                    help='Scale animCurveTL translate animation output values')
+    p.add_argument('--scale-skin-bind-pre-matrices', dest='scale_skin_bind_pre_matrices', action='store_true', default=True,
+                   help='Scale skinCluster bindPreMatrix values')
+    p.add_argument('--skip-skin-bind-pre-matrices', dest='scale_skin_bind_pre_matrices', action='store_false',
+                   help='Debug option: leave skinCluster bindPreMatrix values unchanged')
+    p.add_argument('--fix-adv-eyelid-bind-pre-matrices', dest='fix_adv_eyelid_bind_pre_matrices',
+                   action='store_true', default=True,
+                   help='ADV preset: compensate eyelid skinCluster bindPreMatrix values for unscaled AimEnd local X')
+    p.add_argument('--skip-adv-eyelid-bind-pre-matrices', dest='fix_adv_eyelid_bind_pre_matrices',
+                   action='store_false',
+                   help='Debug option: disable ADV eyelid bindPreMatrix compensation')
     p.add_argument('--extra-vector-attr', action='append', default=[],
                    help='Additional vector attr to scale, e.g. .myOffset. Can be repeated')
     p.add_argument('--extra-scalar-attr', action='append', default=[],

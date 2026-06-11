@@ -192,6 +192,15 @@ def scale_tail_all_values(stmt: str, scale: float) -> tuple[str, int]:
     return prefix + new_tail, n
 
 
+def scale_tail_number_indices(stmt: str, indices: set[int], scale: float) -> tuple[str, int]:
+    sp = split_value_tail(stmt)
+    if not sp:
+        return stmt, 0
+    prefix, value_tail = sp
+    new_tail, n = replace_numbers_by_indices(value_tail, indices, scale)
+    return prefix + new_tail, n
+
+
 def scale_tail_first_value(stmt: str, scale: float) -> tuple[str, int]:
     sp = split_value_tail(stmt)
     if not sp:

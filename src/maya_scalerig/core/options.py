@@ -23,6 +23,8 @@ class Options:
         self.rest_vector_mode: str = args.rest_vector_mode
         self.scale_translate_limits: bool = args.scale_translate_limits
         self.scale_linear_animation: bool = args.scale_linear_animation
+        self.scale_skin_bind_pre_matrices: bool = getattr(args, 'scale_skin_bind_pre_matrices', True)
+        self.fix_adv_eyelid_bind_pre_matrices: bool = getattr(args, 'fix_adv_eyelid_bind_pre_matrices', True)
         self.dry_run: bool = args.dry_run
         self.extra_vector_attrs: set[str] = {normalize_attr(a) for a in args.extra_vector_attr}
         self.extra_scalar_attrs: set[str] = {normalize_attr(a) for a in args.extra_scalar_attr}

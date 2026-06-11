@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
 
     def _build_options_group(self) -> QGroupBox:
         self.options_group = QGroupBox()
-        self.options_group.setMinimumHeight(246)
+        self.options_group.setMinimumHeight(276)
         layout = QVBoxLayout(self.options_group)
         layout.setContentsMargins(12, 16, 12, 12)
         layout.setSpacing(10)
@@ -191,6 +191,7 @@ class MainWindow(QMainWindow):
 
         self.scale_translate_limits_check = QCheckBox()
         self.scale_linear_animation_check = QCheckBox()
+        self.scale_skin_bind_pre_matrices_check = QCheckBox()
         self.dry_run_check = QCheckBox()
         self.write_report_check = QCheckBox()
         self.write_report_check.setChecked(True)
@@ -201,24 +202,27 @@ class MainWindow(QMainWindow):
         self.rest_vector_label = QLabel()
         self.toggle_panel = QFrame()
         self.toggle_panel.setObjectName('optionTogglePanel')
-        self.toggle_panel.setMinimumHeight(88)
+        self.toggle_panel.setMinimumHeight(118)
         toggle_layout = QGridLayout(self.toggle_panel)
         toggle_layout.setContentsMargins(12, 10, 12, 10)
         toggle_layout.setHorizontalSpacing(22)
         toggle_layout.setVerticalSpacing(8)
         toggle_layout.setRowMinimumHeight(0, 30)
         toggle_layout.setRowMinimumHeight(1, 30)
+        toggle_layout.setRowMinimumHeight(2, 30)
         for checkbox in (
             self.scale_translate_limits_check,
             self.scale_linear_animation_check,
+            self.scale_skin_bind_pre_matrices_check,
             self.dry_run_check,
             self.write_report_check,
         ):
             checkbox.setMinimumHeight(28)
         toggle_layout.addWidget(self.scale_translate_limits_check, 0, 0)
         toggle_layout.addWidget(self.scale_linear_animation_check, 0, 1)
-        toggle_layout.addWidget(self.dry_run_check, 1, 0)
-        toggle_layout.addWidget(self.write_report_check, 1, 1)
+        toggle_layout.addWidget(self.scale_skin_bind_pre_matrices_check, 1, 0)
+        toggle_layout.addWidget(self.dry_run_check, 1, 1)
+        toggle_layout.addWidget(self.write_report_check, 2, 0)
         toggle_layout.setColumnStretch(0, 1)
         toggle_layout.setColumnStretch(1, 1)
 
@@ -317,6 +321,7 @@ class MainWindow(QMainWindow):
         self.output_dir_edit.editingFinished.connect(self.save_current_settings)
         self.scale_translate_limits_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.scale_linear_animation_check.toggled.connect(lambda _checked: self.save_current_settings())
+        self.scale_skin_bind_pre_matrices_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.dry_run_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.write_report_check.toggled.connect(lambda _checked: self.save_current_settings())
 
@@ -337,6 +342,7 @@ class MainWindow(QMainWindow):
         self.output_dir_edit.setText(str(self.settings.get('output_dir', '')))
         self.scale_translate_limits_check.setChecked(bool(self.settings.get('scale_translate_limits', False)))
         self.scale_linear_animation_check.setChecked(bool(self.settings.get('scale_linear_animation', False)))
+        self.scale_skin_bind_pre_matrices_check.setChecked(True)
         self.dry_run_check.setChecked(bool(self.settings.get('dry_run', False)))
         self.write_report_check.setChecked(bool(self.settings.get('write_report', True)))
 
@@ -376,6 +382,7 @@ class MainWindow(QMainWindow):
             'rest_vector_mode': self.rest_vector_combo.currentText(),
             'scale_translate_limits': self.scale_translate_limits_check.isChecked(),
             'scale_linear_animation': self.scale_linear_animation_check.isChecked(),
+            'scale_skin_bind_pre_matrices': True,
             'dry_run': self.dry_run_check.isChecked(),
             'write_report': self.write_report_check.isChecked(),
         }
@@ -420,6 +427,7 @@ class MainWindow(QMainWindow):
         self.rest_vector_label.setText(self.tr('rest_vector'))
         self.scale_translate_limits_check.setText(self.tr('scale_translate_limits'))
         self.scale_linear_animation_check.setText(self.tr('scale_linear_animation'))
+        self.scale_skin_bind_pre_matrices_check.setText(self.tr('scale_skin_bind_pre_matrices'))
         self.dry_run_check.setText(self.tr('dry_run'))
         self.write_report_check.setText(self.tr('write_report'))
 
@@ -594,6 +602,7 @@ class MainWindow(QMainWindow):
             'rest_vector_mode': self.rest_vector_combo.currentText(),
             'scale_translate_limits': self.scale_translate_limits_check.isChecked(),
             'scale_linear_animation': self.scale_linear_animation_check.isChecked(),
+            'scale_skin_bind_pre_matrices': self.scale_skin_bind_pre_matrices_check.isChecked(),
             'dry_run': self.dry_run_check.isChecked(),
             'extra_vector_attr': [],
             'extra_scalar_attr': [],

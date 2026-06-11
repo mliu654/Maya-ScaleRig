@@ -164,6 +164,13 @@ translate limits as UI slider ranges rather than world-space distances.
 Scales `animCurveTL` output values. Use this only if the file contains translate
 animation keys that should follow the new rig size.
 
+`--scale-skin-bind-pre-matrices`
+
+Scales `skinCluster.pm[]` / `bindPreMatrix[]` cached inverse bind matrices. This
+is off by default because some face and eye rigs already behave correctly when
+vertices and joints are scaled, and baking these matrices can create local skin
+or delta-mush deformation artifacts.
+
 `--extra-vector-attr ATTR`
 
 Adds a vector attribute to the scale whitelist. Can be repeated.

@@ -5,18 +5,23 @@ from __future__ import annotations
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from maya_scalerig.core.constants import (
+    ADV_EYELID_AIM_END_RE,
+    ADV_EYELID_MAIN_JOINT_RE,
+    ADV_EYELID_MM_RE,
     ARRAY_COORD_ATTRS,
     BASE_SCALAR_ATTRS,
     BASE_VECTOR_ATTRS,
     CREATE_RE,
     NAME_RE,
+    NUM_RE,
     QUOTED_RE,
     REST_LENGTH_ATTRS,
     REST_NODE_TYPES,
     SELECT_RE,
+    SKIN_CLUSTER_BIND_PRE_MATRIX_ATTRS,
     TRANSLATE_LIMIT_ATTRS,
 )
 from maya_scalerig.core.options import Options
@@ -28,8 +33,10 @@ from maya_scalerig.core.scalers import (
     scale_point_array_stmt,
     scale_tail_all_values,
     scale_tail_first_value,
+    scale_tail_number_indices,
 )
 from maya_scalerig.core.text_utils import (
+    fmt_scaled,
     find_attr_ref,
     normalize_attr,
     resolve_node_and_attr,
@@ -38,6 +45,163 @@ from maya_scalerig.core.text_utils import (
     update_statement_state,
 )
 
+CONNECT_SKIN_INFLUENCE_RE = re.compile(r'connectAttr\s+"([^"]+)\.wm"\s+"([^"]+)\.ma\[(\d+)\]"')
+SETATTR_MATRIX_RE = re.compile(r'setAttr\s+"([^"]+)"\s+-type\s+"matrix"(.*?);', re.S)
+SETATTR_TRANSLATE_RE = re.compile(r'setAttr\s+"\.t"(?:\s+-type\s+"[^"]+")?(.*?);', re.S)
+
+
+def _split_adv_side_name(node_name: str, suffix: str = '') -> Optional[tuple[str, str]]:
+    match = re.match(r'^(.*)_([RL])$', node_name)
+    if not match:
+        return None
+    base, side = match.groups()
+    if suffix and not base.endswith(suffix):
+        return None
+    return base, side
+
+
+def _invert_3x3_row0(values: list[float]) -> Optional[tuple[float, float, float]]:
+    if len(values) < 11:
+        return None
+    a00, a01, a02 = values[0], values[1], values[2]
+    a10, a11, a12 = values[4], values[5], values[6]
+    a20, a21, a22 = values[8], values[9], values[10]
+    det = (
+        a00 * (a11 * a22 - a12 * a21)
+        - a01 * (a10 * a22 - a12 * a20)
+        + a02 * (a10 * a21 - a11 * a20)
+    )
+    if abs(det) < 1e-12:
+        return None
+    return (
+        (a11 * a22 - a12 * a21) / det,
+        (a02 * a21 - a01 * a22) / det,
+        (a01 * a12 - a02 * a11) / det,
+    )
+
+
+def _iter_create_blocks(text: str):
+    current_type = None
+    current_name = None
+    buffer: list[str] = []
+    for line in text.splitlines(True):
+        cm = CREATE_RE.match(line)
+        if cm:
+            if current_name is not None:
+                yield current_type, current_name, ''.join(buffer)
+            current_type = cm.group(1)
+            nm = NAME_RE.search(cm.group(2))
+            current_name = nm.group(1) if nm else None
+            buffer = [line]
+        elif current_name is not None:
+            buffer.append(line)
+    if current_name is not None:
+        yield current_type, current_name, ''.join(buffer)
+
+
+def build_scene_metadata(src: Path) -> dict[str, Any]:
+    text = src.read_text(encoding='latin-1')
+    aim_x_by_node: dict[str, float] = {}
+    mm_inv_x_by_node: dict[str, tuple[float, float, float]] = {}
+    skin_influences: dict[tuple[str, int], str] = {}
+    node_names: set[str] = set()
+
+    for _node_type, node_name, block in _iter_create_blocks(text):
+        if node_name:
+            node_names.add(node_name)
+        if node_name and ADV_EYELID_AIM_END_RE.match(node_name):
+            tm = SETATTR_TRANSLATE_RE.search(block)
+            if tm:
+                values = [float(m.group(0)) for m in NUM_RE.finditer(tm.group(1))]
+                if values:
+                    aim_x_by_node[node_name] = values[0]
+        if node_name and ADV_EYELID_MM_RE.match(node_name):
+            for mm in SETATTR_MATRIX_RE.finditer(block):
+                if normalize_attr(mm.group(1)) == '.i[]' and mm.group(1).startswith('.i[0]'):
+                    values = [float(m.group(0)) for m in NUM_RE.finditer(mm.group(2))]
+                    row0 = _invert_3x3_row0(values)
+                    if row0:
+                        mm_inv_x_by_node[node_name] = row0
+                    break
+
+    for cm in CONNECT_SKIN_INFLUENCE_RE.finditer(text):
+        src_attr, skin_node, index_s = cm.groups()
+        influence = short_node_name(src_attr)
+        if influence:
+            skin_influences[(short_node_name(skin_node) or skin_node, int(index_s))] = influence
+
+    return {
+        'adv_eyelid_aim_x': aim_x_by_node,
+        'adv_eyelid_mm_inv_x': mm_inv_x_by_node,
+        'skin_influences': skin_influences,
+        'node_names': node_names,
+    }
+
+
+def _adv_eyelid_related_nodes(influence: str) -> Optional[tuple[str, str]]:
+    if not ADV_EYELID_MAIN_JOINT_RE.match(influence):
+        return None
+    if re.match(r'^upperLidMain(?:0|13)_[RL]$', influence):
+        return None
+    parts = _split_adv_side_name(influence)
+    if not parts:
+        return None
+    base, side = parts
+    return f'{base}AimEnd_{side}', f'{base}MM_{side}'
+
+
+def correct_adv_eyelid_bind_pre_matrix(
+    stmt: str,
+    skin_node: str,
+    attr: str,
+    opts: Options,
+    metadata: dict[str, Any],
+) -> tuple[str, bool]:
+    if opts.preset != 'adv' or not opts.fix_adv_eyelid_bind_pre_matrices:
+        return stmt, False
+    idx_match = re.search(r'\[(\d+)\]', attr)
+    if not idx_match:
+        return stmt, False
+    influence = metadata.get('skin_influences', {}).get((skin_node, int(idx_match.group(1))))
+    if not influence:
+        return stmt, False
+    related = _adv_eyelid_related_nodes(influence)
+    if not related:
+        return stmt, False
+    aim_node, mm_node = related
+    parts = _split_adv_side_name(influence)
+    if not parts:
+        return stmt, False
+    base, side = parts
+    if f'{base}AimMM_{side}' not in metadata.get('node_names', set()):
+        return stmt, False
+    aim_x = metadata.get('adv_eyelid_aim_x', {}).get(aim_node)
+    inv_x = metadata.get('adv_eyelid_mm_inv_x', {}).get(mm_node)
+    if aim_x is None or inv_x is None:
+        return stmt, False
+
+    marker = '-type "matrix"'
+    pos = stmt.find(marker)
+    if pos < 0:
+        return stmt, False
+    before = stmt[:pos + len(marker)]
+    tail = stmt[pos + len(marker):]
+    correction = [(opts.scale - 1.0) * aim_x * axis for axis in inv_x]
+    number_index = 0
+    changed = False
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal number_index, changed
+        token = match.group(0)
+        out = token
+        if number_index in {12, 13, 14}:
+            value = float(token) + correction[number_index - 12]
+            out = fmt_scaled(str(value), 1.0)
+            changed = True
+        number_index += 1
+        return out
+
+    return before + NUM_RE.sub(repl, tail), changed
 
 def process_setattr(
     stmt: str,
@@ -46,6 +210,7 @@ def process_setattr(
     node_types: dict[str, str],
     opts: Options,
     report: Counter,
+    metadata: dict[str, Any],
 ) -> str:
     attr_ref = find_attr_ref(stmt)
     if not attr_ref:
@@ -77,7 +242,23 @@ def process_setattr(
         return new
 
     if '-type "matrix"' in stmt:
+        if (
+            node_type_l == 'skincluster'
+            and base in SKIN_CLUSTER_BIND_PRE_MATRIX_ATTRS
+            and not opts.scale_skin_bind_pre_matrices
+        ):
+            report['skinCluster_bindPreMatrix_skipped'] += 1
+            return stmt
         new, n, kind = scale_matrix_stmt(stmt, opts.scale)
+        if (
+            node_type_l == 'skincluster'
+            and base in SKIN_CLUSTER_BIND_PRE_MATRIX_ATTRS
+            and opts.scale_skin_bind_pre_matrices
+        ):
+            fixed, did_fix = correct_adv_eyelid_bind_pre_matrix(new, node_name_s, attr, opts, metadata)
+            if did_fix:
+                new = fixed
+                report['adv_eyelid_bindPreMatrix_corrected'] += 1
         if n:
             report[kind] += n
         return new
@@ -87,6 +268,21 @@ def process_setattr(
         if n:
             report[f'{base}_coordinate_numbers'] += n
         return new
+
+    if opts.preset == 'adv' and ADV_EYELID_AIM_END_RE.match(node_name_s):
+        if base in {'.t', '.translate'}:
+            new, n = scale_tail_number_indices(stmt, {1, 2}, opts.scale)
+            if n:
+                report['adv_eyelid_aimEnd_translate_yz_numbers'] += n
+            return new
+        if base in {'.tx', '.translatex'}:
+            report['adv_eyelid_aimEnd_translate_x_skipped'] += 1
+            return stmt
+        if base in {'.ty', '.translatey', '.tz', '.translatez'}:
+            new, n = scale_tail_all_values(stmt, opts.scale)
+            if n:
+                report[f'{base}_scalar_numbers'] += n
+            return new
 
     vector_attrs = set(BASE_VECTOR_ATTRS) | opts.extra_vector_attrs
     if opts.scale_translate_limits:
@@ -178,6 +374,7 @@ def parse_select_context(line: str, node_types: dict[str, str]) -> tuple[Optiona
 
 def process_file(src: Path, dst: Path, opts: Options) -> Counter:
     report: Counter = Counter()
+    metadata = build_scene_metadata(src)
     out_parts: list[str] = []
     node_types: dict[str, str] = {}
     current_node: Optional[str] = None
@@ -202,7 +399,7 @@ def process_file(src: Path, dst: Path, opts: Options) -> Counter:
                 report['addAttr_spatial_default_values'] += n
             return new
         if stripped.startswith('setAttr'):
-            return process_setattr(statement, current_node, current_type, node_types, opts, report)
+            return process_setattr(statement, current_node, current_type, node_types, opts, report, metadata)
         return statement
 
     with src.open('r', encoding='latin-1', newline='') as f:
@@ -246,7 +443,10 @@ def process_file(src: Path, dst: Path, opts: Options) -> Counter:
     if stmt_buf:
         out_parts.append(flush_stmt(stmt_buf))
 
-    report['total_scaled_numbers'] = sum(v for k, v in report.items() if k != 'total_scaled_numbers')
+    report['total_scaled_numbers'] = sum(
+        v for k, v in report.items()
+        if k != 'total_scaled_numbers' and 'skipped' not in k.lower()
+    )
     if not opts.dry_run:
         dst.write_text(''.join(out_parts), encoding='latin-1', newline='')
     return report
@@ -268,6 +468,8 @@ def make_report_text(src: Path, dst: Path, opts: Options, report: Counter) -> st
         f'Rest vector mode: {opts.rest_vector_mode}',
         f'Scale translate limits: {opts.scale_translate_limits}',
         f'Scale animCurveTL translate animation: {opts.scale_linear_animation}',
+        f'Scale skinCluster bindPreMatrix: {opts.scale_skin_bind_pre_matrices}',
+        f'Fix ADV eyelid bindPreMatrix: {opts.fix_adv_eyelid_bind_pre_matrices}',
         f'Dry run: {opts.dry_run}',
         '',
         'Changed numeric values by category:',
