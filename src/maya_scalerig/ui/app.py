@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -25,7 +24,6 @@ try:
         QMessageBox,
         QPushButton,
         QProgressBar,
-        QFrame,
         QTableWidget,
         QTableWidgetItem,
         QTextEdit,
@@ -57,13 +55,24 @@ STATUS_COLORS = {
     'error': ('#a33c3c', '#fff0f0'),
 }
 
+AUTO_RIG_OPTIONS: dict[str, Any] = {
+    'preset': 'adv',
+    'sdk_mode': 'auto',
+    'rest_mode': 'auto',
+    'rest_vector_mode': 'first',
+    'scale_translate_limits': False,
+    'scale_linear_animation': False,
+    'scale_skin_bind_pre_matrices': True,
+    'fix_adv_eyelid_bind_pre_matrices': True,
+}
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle('Maya ScaleRig')
         self.resize(1120, 760)
-        self.setMinimumSize(940, 760)
+        self.setMinimumSize(940, 720)
 
         self.worker: Optional[ScaleWorker] = None
         self.thread: Optional[QThread] = None
@@ -133,23 +142,14 @@ class MainWindow(QMainWindow):
 
     def _build_options_group(self) -> QGroupBox:
         self.options_group = QGroupBox()
-        self.options_group.setMinimumHeight(276)
-        layout = QVBoxLayout(self.options_group)
-        layout.setContentsMargins(12, 16, 12, 12)
-        layout.setSpacing(10)
-
-        self.option_controls_panel = QFrame()
-        self.option_controls_panel.setObjectName('optionControlsPanel')
-        self.option_controls_panel.setMinimumHeight(96)
-        controls_layout = QGridLayout(self.option_controls_panel)
-        controls_layout.setContentsMargins(10, 10, 10, 10)
-        controls_layout.setHorizontalSpacing(10)
-        controls_layout.setVerticalSpacing(10)
-        controls_layout.setRowMinimumHeight(0, 36)
-        controls_layout.setRowMinimumHeight(1, 36)
-        controls_layout.setColumnStretch(1, 1)
-        controls_layout.setColumnStretch(3, 1)
-        controls_layout.setColumnStretch(5, 1)
+        self.options_group.setMinimumHeight(112)
+        layout = QGridLayout(self.options_group)
+        layout.setContentsMargins(12, 18, 12, 12)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(8)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(6, 1)
 
         self.language_label = QLabel()
         self.language_combo = QComboBox()
@@ -157,91 +157,35 @@ class MainWindow(QMainWindow):
             self.language_combo.addItem(language_name, language_code)
         self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
         self.language_combo.setFixedHeight(36)
-        self.language_combo.setMinimumWidth(130)
+        self.language_combo.setMinimumWidth(140)
 
+        self.scale_label = QLabel()
         self.scale_spin = QDoubleSpinBox()
         self.scale_spin.setRange(0.0001, 1000000.0)
         self.scale_spin.setDecimals(4)
         self.scale_spin.setValue(2.5)
         self.scale_spin.setSingleStep(0.1)
         self.scale_spin.setFixedHeight(36)
+        self.scale_spin.setMinimumWidth(140)
         self.scale_spin.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.scale_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self.scale_spin.setSuffix(' x')
 
-        self.preset_combo = QComboBox()
-        self.preset_combo.addItems(['adv', 'generic'])
-        self.preset_combo.setFixedHeight(36)
-        self.preset_combo.setMinimumWidth(130)
-
-        self.sdk_combo = QComboBox()
-        self.sdk_combo.addItems(['auto', 'none', 'linear-output'])
-        self.sdk_combo.setFixedHeight(36)
-        self.sdk_combo.setMinimumWidth(150)
-
-        self.rest_combo = QComboBox()
-        self.rest_combo.addItems(['auto', 'off', 'on'])
-        self.rest_combo.setFixedHeight(36)
-        self.rest_combo.setMinimumWidth(130)
-
-        self.rest_vector_combo = QComboBox()
-        self.rest_vector_combo.addItems(['first', 'all'])
-        self.rest_vector_combo.setFixedHeight(36)
-        self.rest_vector_combo.setMinimumWidth(130)
-
-        self.scale_translate_limits_check = QCheckBox()
-        self.scale_linear_animation_check = QCheckBox()
-        self.scale_skin_bind_pre_matrices_check = QCheckBox()
-        self.dry_run_check = QCheckBox()
         self.write_report_check = QCheckBox()
         self.write_report_check.setChecked(True)
-        self.scale_label = QLabel()
-        self.preset_label = QLabel()
-        self.sdk_mode_label = QLabel()
-        self.rest_mode_label = QLabel()
-        self.rest_vector_label = QLabel()
-        self.toggle_panel = QFrame()
-        self.toggle_panel.setObjectName('optionTogglePanel')
-        self.toggle_panel.setMinimumHeight(118)
-        toggle_layout = QGridLayout(self.toggle_panel)
-        toggle_layout.setContentsMargins(12, 10, 12, 10)
-        toggle_layout.setHorizontalSpacing(22)
-        toggle_layout.setVerticalSpacing(8)
-        toggle_layout.setRowMinimumHeight(0, 30)
-        toggle_layout.setRowMinimumHeight(1, 30)
-        toggle_layout.setRowMinimumHeight(2, 30)
-        for checkbox in (
-            self.scale_translate_limits_check,
-            self.scale_linear_animation_check,
-            self.scale_skin_bind_pre_matrices_check,
-            self.dry_run_check,
-            self.write_report_check,
-        ):
-            checkbox.setMinimumHeight(28)
-        toggle_layout.addWidget(self.scale_translate_limits_check, 0, 0)
-        toggle_layout.addWidget(self.scale_linear_animation_check, 0, 1)
-        toggle_layout.addWidget(self.scale_skin_bind_pre_matrices_check, 1, 0)
-        toggle_layout.addWidget(self.dry_run_check, 1, 1)
-        toggle_layout.addWidget(self.write_report_check, 2, 0)
-        toggle_layout.setColumnStretch(0, 1)
-        toggle_layout.setColumnStretch(1, 1)
+        self.write_report_check.setMinimumHeight(30)
+        self.write_report_check.setMinimumWidth(132)
 
-        controls_layout.addWidget(self.language_label, 0, 0)
-        controls_layout.addWidget(self.language_combo, 0, 1)
-        controls_layout.addWidget(self.scale_label, 0, 2)
-        controls_layout.addWidget(self.scale_spin, 0, 3)
-        controls_layout.addWidget(self.preset_label, 0, 4)
-        controls_layout.addWidget(self.preset_combo, 0, 5)
+        self.dry_run_check = QCheckBox()
+        self.dry_run_check.setMinimumHeight(30)
+        self.dry_run_check.setMinimumWidth(92)
 
-        controls_layout.addWidget(self.sdk_mode_label, 1, 0)
-        controls_layout.addWidget(self.sdk_combo, 1, 1)
-        controls_layout.addWidget(self.rest_mode_label, 1, 2)
-        controls_layout.addWidget(self.rest_combo, 1, 3)
-        controls_layout.addWidget(self.rest_vector_label, 1, 4)
-        controls_layout.addWidget(self.rest_vector_combo, 1, 5)
-
-        layout.addWidget(self.option_controls_panel)
-        layout.addWidget(self.toggle_panel)
+        layout.addWidget(self.language_label, 0, 0)
+        layout.addWidget(self.language_combo, 0, 1)
+        layout.addWidget(self.scale_label, 0, 2)
+        layout.addWidget(self.scale_spin, 0, 3)
+        layout.addWidget(self.write_report_check, 0, 4)
+        layout.addWidget(self.dry_run_check, 0, 5)
 
         return self.options_group
 
@@ -314,14 +258,7 @@ class MainWindow(QMainWindow):
         self.selected_output_name_edit.editingFinished.connect(self.apply_selected_output_name)
         self.language_combo.currentIndexChanged.connect(self.change_language)
         self.scale_spin.valueChanged.connect(lambda _value: self.save_current_settings())
-        self.preset_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
-        self.sdk_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
-        self.rest_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
-        self.rest_vector_combo.currentTextChanged.connect(lambda _text: self.save_current_settings())
         self.output_dir_edit.editingFinished.connect(self.save_current_settings)
-        self.scale_translate_limits_check.toggled.connect(lambda _checked: self.save_current_settings())
-        self.scale_linear_animation_check.toggled.connect(lambda _checked: self.save_current_settings())
-        self.scale_skin_bind_pre_matrices_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.dry_run_check.toggled.connect(lambda _checked: self.save_current_settings())
         self.write_report_check.toggled.connect(lambda _checked: self.save_current_settings())
 
@@ -333,25 +270,11 @@ class MainWindow(QMainWindow):
             self.scale_spin.setValue(float(self.settings.get('scale', self.scale_spin.value())))
         except (TypeError, ValueError):
             pass
-        self.set_combo_value(self.preset_combo, self.settings.get('preset'))
-        self.set_combo_value(self.sdk_combo, self.settings.get('sdk_mode'))
-        self.set_combo_value(self.rest_combo, self.settings.get('rest_mode'))
-        self.set_combo_value(self.rest_vector_combo, self.settings.get('rest_vector_mode'))
         self.set_combo_data(self.language_combo, self.language)
 
         self.output_dir_edit.setText(str(self.settings.get('output_dir', '')))
-        self.scale_translate_limits_check.setChecked(bool(self.settings.get('scale_translate_limits', False)))
-        self.scale_linear_animation_check.setChecked(bool(self.settings.get('scale_linear_animation', False)))
-        self.scale_skin_bind_pre_matrices_check.setChecked(True)
         self.dry_run_check.setChecked(bool(self.settings.get('dry_run', False)))
         self.write_report_check.setChecked(bool(self.settings.get('write_report', True)))
-
-    def set_combo_value(self, combo: QComboBox, value: object) -> None:
-        if value is None:
-            return
-        index = combo.findText(str(value))
-        if index >= 0:
-            combo.setCurrentIndex(index)
 
     def set_combo_data(self, combo: QComboBox, value: object) -> None:
         if value is None:
@@ -376,19 +299,12 @@ class MainWindow(QMainWindow):
             'last_output_dir': self.settings.get('last_output_dir', ''),
             'output_dir': self.output_dir_edit.text().strip(),
             'scale': self.scale_spin.value(),
-            'preset': self.preset_combo.currentText(),
-            'sdk_mode': self.sdk_combo.currentText(),
-            'rest_mode': self.rest_combo.currentText(),
-            'rest_vector_mode': self.rest_vector_combo.currentText(),
-            'scale_translate_limits': self.scale_translate_limits_check.isChecked(),
-            'scale_linear_animation': self.scale_linear_animation_check.isChecked(),
-            'scale_skin_bind_pre_matrices': True,
             'dry_run': self.dry_run_check.isChecked(),
             'write_report': self.write_report_check.isChecked(),
         }
 
     def save_current_settings(self) -> None:
-        self.settings.update(self.current_settings())
+        self.settings = self.current_settings()
         save_settings(self.settings)
 
     def change_language(self) -> None:
@@ -421,13 +337,6 @@ class MainWindow(QMainWindow):
         self.selected_output_name_edit.setPlaceholderText(self.tr('output_name_placeholder'))
 
         self.scale_label.setText(self.tr('scale'))
-        self.preset_label.setText(self.tr('preset'))
-        self.sdk_mode_label.setText(self.tr('sdk_mode'))
-        self.rest_mode_label.setText(self.tr('rest_mode'))
-        self.rest_vector_label.setText(self.tr('rest_vector'))
-        self.scale_translate_limits_check.setText(self.tr('scale_translate_limits'))
-        self.scale_linear_animation_check.setText(self.tr('scale_linear_animation'))
-        self.scale_skin_bind_pre_matrices_check.setText(self.tr('scale_skin_bind_pre_matrices'))
         self.dry_run_check.setText(self.tr('dry_run'))
         self.write_report_check.setText(self.tr('write_report'))
 
@@ -444,6 +353,21 @@ class MainWindow(QMainWindow):
         self.log.setPlaceholderText(self.tr('log_placeholder'))
         self.refresh_status_language()
 
+    def done_status_total(self, status: str) -> Optional[str]:
+        marker = '{total}'
+        for language in LANGUAGE_NAMES:
+            template = translate(language, 'status_done', total=marker)
+            if marker not in template:
+                continue
+            prefix, suffix = template.split(marker, 1)
+            if not status.startswith(prefix) or not status.endswith(suffix):
+                continue
+            end = len(status) - len(suffix) if suffix else len(status)
+            total = status[len(prefix):end]
+            if total.isdigit():
+                return total
+        return None
+
     def refresh_status_language(self) -> None:
         for row in range(self.table.rowCount()):
             item = self.table.item(row, STATUS_COL)
@@ -457,9 +381,9 @@ class MainWindow(QMainWindow):
             elif any(current == translate(lang, 'status_error') for lang in LANGUAGE_NAMES):
                 item.setText(self.tr('status_error'))
             else:
-                done_match = re.match(r'^(?:Done|完成) \((\d+)\)$', current)
-                if done_match:
-                    item.setText(self.tr('status_done', total=done_match.group(1)))
+                done_total = self.done_status_total(current)
+                if done_total is not None:
+                    item.setText(self.tr('status_done', total=done_total))
             self.apply_status_style(item)
 
     def browse_single_input(self) -> None:
@@ -593,16 +517,10 @@ class MainWindow(QMainWindow):
         self.clear_btn.setEnabled(not running)
 
     def build_options_data(self) -> dict[str, Any]:
-        return {
+        data = dict(AUTO_RIG_OPTIONS)
+        data.update({
             'scale': self.scale_spin.value(),
-            'preset': self.preset_combo.currentText(),
-            'sdk_mode': self.sdk_combo.currentText(),
             'sdk_node_regex': DEFAULT_SDK_LINEAR_NODE_REGEX,
-            'rest_mode': self.rest_combo.currentText(),
-            'rest_vector_mode': self.rest_vector_combo.currentText(),
-            'scale_translate_limits': self.scale_translate_limits_check.isChecked(),
-            'scale_linear_animation': self.scale_linear_animation_check.isChecked(),
-            'scale_skin_bind_pre_matrices': self.scale_skin_bind_pre_matrices_check.isChecked(),
             'dry_run': self.dry_run_check.isChecked(),
             'extra_vector_attr': [],
             'extra_scalar_attr': [],
@@ -610,7 +528,8 @@ class MainWindow(QMainWindow):
             'rest_node_regex': DEFAULT_REST_NODE_REGEX,
             'extra_rest_regex': '',
             'write_report': self.write_report_check.isChecked(),
-        }
+        })
+        return data
 
     def build_jobs(self) -> list[dict[str, Any]]:
         output_dir_text = self.output_dir_edit.text().strip()
@@ -677,7 +596,7 @@ class MainWindow(QMainWindow):
             status_key = 'running'
         elif status in {translate(lang, 'status_error') for lang in LANGUAGE_NAMES}:
             status_key = 'error'
-        elif re.match(r'^(?:Done|完成) \(\d+\)$', status):
+        elif self.done_status_total(status) is not None:
             status_key = 'done'
 
         foreground, background = STATUS_COLORS[status_key]

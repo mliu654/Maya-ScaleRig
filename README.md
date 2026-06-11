@@ -121,9 +121,12 @@ $env:PYTHONPATH = ".\src"
 python -m maya_scalerig.ui
 ```
 
-The UI currently supports Chinese/English switching, typed input paths, file
-pickers, editable output folder and output names, scale factor input, batch
-processing, progress display, dry run, report writing, and a log panel.
+The UI supports Chinese/English switching, typed input paths, file pickers,
+editable output folders and output names, scale factor input, batch processing,
+progress display, dry run, report writing, and a log panel. It runs the core
+scaler with the automatic rig profile: skinCluster bind pre-matrices and the ADV
+eyelid compensation are enabled by default, while low-level debug switches remain
+available from the CLI.
 
 ## Main Options
 
