@@ -3,4 +3,12 @@ __pycache__/
 
 output*.ma
 *_report.txt
+# Packaging/build artifacts
+*.egg-info/
+build/
+dist/
+.pytest_cache/
 
+# Local generated fixture outputs
+/tests/fixtures/*_report.txt
+/tests/fixtures/output*.ma

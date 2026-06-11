@@ -23,13 +23,19 @@ Maya-ScaleRig/
 |       |   +-- text_utils.py
 |       +-- ui/
 |           +-- app.py
+|           +-- config.py
 |           +-- i18n.py
+|           +-- style.py
 |           +-- worker.py
-|           +-- __main__.py
+|           +-- assets/
 |           +-- README.md
 +-- tests/
 |   +-- fixtures/
+|       +-- README.md
 |       +-- input.ma
+|       +-- input_2.ma
+|       +-- input_2_correct.ma
+|       +-- input_2_adv_eye_fix.ma
 +-- docs/
 |   +-- MA_rig_space_scale_logic_summary.md
 +-- README.md
@@ -167,9 +173,17 @@ animation keys that should follow the new rig size.
 `--scale-skin-bind-pre-matrices`
 
 Scales `skinCluster.pm[]` / `bindPreMatrix[]` cached inverse bind matrices. This
-is off by default because some face and eye rigs already behave correctly when
-vertices and joints are scaled, and baking these matrices can create local skin
-or delta-mush deformation artifacts.
+is on by default because bind matrices must usually stay consistent with scaled
+vertices, joints, and dagPose data. Use `--skip-skin-bind-pre-matrices` only as a
+debug option.
+
+`--fix-adv-eyelid-bind-pre-matrices`
+
+ADV preset only. Keeps AdvancedSkeleton eyelid `AimEnd` local X lengths from
+being treated as world-space scale offsets, then compensates the related eyelid
+`skinCluster.pm[]` values. This fixes the eye/eyelid deformation case where
+skin is enabled but the unbound mesh looks correct. It is enabled by default;
+use `--skip-adv-eyelid-bind-pre-matrices` only for comparison tests.
 
 `--extra-vector-attr ATTR`
 
